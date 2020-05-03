@@ -29,7 +29,7 @@ grep "\"Company" names.filtered.csv | wc -l
 grep "\"Person" names.filtered.csv | wc -l
 ```
 
-
+`prod-names.csv`: 29328372 Company, 257103046 Person
 
 ## Credits
 
