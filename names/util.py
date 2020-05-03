@@ -8,7 +8,7 @@ UNICODE_CATEGORIES = {
     'Cn': None,
     'Lm': None,
     'Mn': None,
-    'Mc': '\'',
+    'Mc': None,
     'Me': '\'',
     'Zs': ' ',
     'Zl': ' ',
@@ -20,9 +20,9 @@ UNICODE_CATEGORIES = {
     'Pi': '.',
     'Pf': '.',
     'Po': '.',
-    'Sc': None,
-    'Sk': None,
-    'So': None
+    'Sc': '.',
+    'Sk': '.',
+    'So': '.'
 }
 
 

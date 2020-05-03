@@ -38,10 +38,11 @@ class NameDataset(IterableDataset):
     def __len__(self):
         return self.names_len
 
-    def encode(self, name):
-        text, category = name
+    def encode(self, item):
+        name, category = item
+        name = NameClassifier.encode_name(name)
         label = NameClassifier.encode_category(category)
-        return NameClassifier.encode_name(text), label
+        return name, label
 
 
 def take_fixed(iterable, count):
