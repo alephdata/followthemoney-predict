@@ -1,7 +1,7 @@
 import json
 import click
 import requests
-from pprint import pprint
+from pprint import pprint  # noqa
 from rdflib import Graph, Namespace, Literal
 from rdflib.namespace import SKOS, RDFS
 
