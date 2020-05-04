@@ -1,6 +1,7 @@
 import os
 import csv
 import random
+import fingerprints
 from torch.utils.data import IterableDataset, DataLoader
 
 from model import NameClassifier
@@ -24,6 +25,11 @@ def iter_items():
             if name is not None and len(name) > 1:
                 # print(name, category)
                 yield name, category
+            if category == 'Company':
+                removed = fingerprints.remove_types(name, normalize)
+                if removed is not None and removed != name:
+                    # print(name, removed, category)
+                    yield removed, category
 
 
 class NameDataset(IterableDataset):
@@ -68,6 +74,6 @@ print('Training: ', len(train_dataset))
 print('Validation: ', len(validation_dataset))
 print('Test: ', len(test_dataset))
 
-train_loader = DataLoader(train_dataset, batch_size=16)
+train_loader = DataLoader(train_dataset, batch_size=8)
 validation_loader = DataLoader(validation_dataset, batch_size=1000)
 test_loader = DataLoader(test_dataset, batch_size=1000)

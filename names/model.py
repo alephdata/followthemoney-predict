@@ -12,7 +12,7 @@ else:
 
 
 class NameClassifier(nn.Module):
-    ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789 \'.?'
+    ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789 -\'.?'
     WIDTH = len(ALPHABET)
     LENGTH = 128
     CATEGORIES = ['Person', 'Company']
@@ -29,15 +29,11 @@ class NameClassifier(nn.Module):
             nn.MaxPool1d(2),
             nn.ReLU()
         )
-        # self.drop_out = nn.Dropout()
-        # self.lin = nn.Linear(512, len(self.CATEGORIES))
-        # self.lin = nn.Linear(512, 2)
         self.out = nn.Sequential(
             nn.Dropout(),
-            nn.Linear(int(base * 4), 2),
+            nn.Linear(int(base * 4), len(self.CATEGORIES)),
             nn.ReLU()
         )
-        # self.out = nn.LogSoftmax(dim=0)
 
     def forward(self, name):
         name = name.to(device)
