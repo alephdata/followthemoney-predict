@@ -12,7 +12,7 @@ file_path = os.path.abspath(__file__)
 data_path = os.path.join(os.path.dirname(file_path),
                          '../work/names.filtered.shuffled.csv')
 TOTAL = 1000000
-OFFSET = int(random.randint(0, TOTAL * 0.1))
+OFFSET = int(random.randint(0, TOTAL))
 TEST_SIZE = int(TOTAL * 0.05)
 VALIDATION_SIZE = int(TOTAL * 0.05)
 
@@ -67,7 +67,7 @@ items = iter_items()
 take_fixed(items, OFFSET)
 validation_dataset = NameDataset(take_fixed(items, VALIDATION_SIZE))
 test_dataset = NameDataset(take_fixed(items, TEST_SIZE))
-REMAINING = TOTAL - OFFSET - TEST_SIZE - VALIDATION_SIZE
+REMAINING = TOTAL - TEST_SIZE - VALIDATION_SIZE
 train_dataset = NameDataset(items, REMAINING)
 
 print('Training: ', len(train_dataset))
