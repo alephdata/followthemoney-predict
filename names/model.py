@@ -32,7 +32,7 @@ class NameClassifier(nn.Module):
         self.out = nn.Sequential(
             nn.Dropout(),
             nn.Linear(int(base * 4), len(self.CATEGORIES)),
-            nn.ReLU()
+            nn.Sigmoid()
         )
 
     def forward(self, name):

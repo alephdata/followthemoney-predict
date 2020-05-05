@@ -7,12 +7,12 @@ from model import NameClassifier, device
 from data import train_loader, validation_loader, test_loader  # noqa
 
 cnn = NameClassifier().to(device).double()
-weights = [0.10, 1.0]
-class_weights = torch.DoubleTensor(weights).to(device)
-print('Class weights: ', class_weights)
-loss_fn = nn.CrossEntropyLoss(weight=class_weights)
-# loss_fn = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(cnn.parameters(), 0.001)
+# weights = [0.10, 1.0]
+# class_weights = torch.DoubleTensor(weights).to(device)
+# print('Class weights: ', class_weights)
+# loss_fn = nn.CrossEntropyLoss(weight=class_weights)
+loss_fn = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(cnn.parameters(), 0.00001)
 
 
 def train(name, category):
@@ -34,6 +34,7 @@ def evaluate(samples):
             name, category = data
             output = cnn.forward(name)
             # output = output.flatten()
+            # print(output.shape, category.shape)
             loss = loss_fn(output, category.to(device)).item()
             _, prediction = torch.max(output.data, 1)
 
@@ -41,6 +42,7 @@ def evaluate(samples):
             # output = output.data.cpu().numpy()
             # pred = np.heaviside(output, 0).astype(int)
             correct = torch.sum(prediction == category.data)
+            # print(prediction, category)
             # total = len(category)
             # print(correct, total)
             right += int(correct)
@@ -63,4 +65,5 @@ for idx, item in enumerate(train_loader):
         cnn.eval()
         loss, accuracy = evaluate(validation_loader)
         print(f'Training Loss: {training_loss}, Validation Loss: {loss}, Validation Accuracy: {accuracy}%')  # noqa
+        torch.save(cnn.state_dict(), 'names.pyts')
         cnn.train()
