@@ -1,14 +1,16 @@
+import itertools as IT
+from collections import deque
+import operator
+import random
+import time
+from zlib import crc32
+
 import dask
 import dask.bag
-from dask.distributed import Client, progress
 import ujson
-import random
-from zlib import crc32
-import operator
-
-from pandas.api.types import CategoricalDtype
+from dask.distributed import Client, progress
 from normality import normalize
-
+from pandas.api.types import CategoricalDtype
 
 dask.config.set({"temporary_directory": "/tmp/dask/"})
 
@@ -44,6 +46,14 @@ META["weight"] = int
 META["phase"] = CategoricalDtype(PHASES.keys())
 
 
+def pair_combinations(sequence):
+    sequence2 = IT.cycle(sequence)
+    next(sequence2)
+    for i in range(len(sequence) - 1):
+        yield from zip(sequence[: -(i + 1)], sequence2)
+        deque(IT.islice(sequence2, i + 2), maxlen=0)
+
+
 def multi_name(entity):
     return len(set(n for n in entity["properties"].get("name", []) if "@" not in n)) > 1
 
@@ -67,6 +77,11 @@ def entity_to_samples(entity, fields=FIELDS):
     return samples
 
 
+def normalize_linkage(item):
+    entity = item.pop("entity")
+    return {**entity, **item}
+
+
 def load_json(item):
     blob, path = item
     data = ujson.loads(blob)
@@ -82,7 +97,7 @@ def create_pairs_positive(path_glob, weight=0.5):
     )
     b = (
         b.map(entity_to_samples)
-        .map(pairs_from_group, judgement=True, weight=weight)
+        .map(pairs_from_group, judgement=True, weight=weight, replacement=False)
         .flatten()
     )
     return b
@@ -90,12 +105,34 @@ def create_pairs_positive(path_glob, weight=0.5):
 
 def create_pairs_negative(path_glob, weight=0.5):
     b = dask.bag.read_text(path_glob, include_path=True).map(load_json)
+    b = b.map(entity_to_samples).flatten()
     b = (
-        b.map(entity_to_samples)
-        .flatten()
-        .groupby(operator.itemgetter("path"))
+        b.groupby(operator.itemgetter("path"))
         .map(operator.itemgetter(1))
-        .map(pairs_from_group, judgement=False, weight=weight)
+        .map(pairs_from_group, judgement=False, weight=weight, replacement=True)
+        .flatten()
+    )
+    return b
+
+
+def create_pairs_linkages(path_glob, weight=1.0):
+    b = (
+        dask.bag.read_text(path_glob, include_path=True)
+        .map(load_json)
+        .map(normalize_linkage)
+    )
+    b = b.map(entity_to_samples).flatten()
+    b = (
+        b.groupby(operator.itemgetter("profile_id"))
+        .map(operator.itemgetter(1))
+        .map(
+            pairs_from_group,
+            judgement=lambda a, b: (
+                a.get("decision", False) and b.get("decision", False)
+            ),
+            replacement=True,
+            weight=weight,
+        )
         .flatten()
     )
     return b
@@ -105,20 +142,27 @@ def pairs_to_dataframe(bag, field_pct=0.05):
     return bag.to_dataframe(meta=META)
 
 
-def pairs_from_group(group, judgement, weight=0.5):
+def pairs_from_group(group, judgement, weight=0.5, replacement=False):
     N = len(group)
     if N < 2:
         return []
-    idxs = list(range(len(group)))
+    if judgement in (True, False):
+        __judgement = judgement
+        judgement = lambda a, b: __judgement
+    idxs = list(range(N))
     random.shuffle(idxs)
+    if replacement:
+        indicies = IT.islice(pair_combinations(idxs), 1_000_000)
+    else:
+        indicies = zip(idxs[N // 2 :], idxs[: N // 2])
     result = []
-    for i, j in zip(idxs[N // 2 :], idxs[: N // 2]):
+    for i, j in indicies:
         pair = {
             f"{which}_{k}": v
             for which, sample in (("left", group[i]), ("right", group[j]))
             for k, v in sample.items()
         }
-        pair["judgement"] = True
+        pair["judgement"] = judgement(group[i], group[j])
         pair["weight"] = weight
         pair["phase"] = keys_to_phase(pair["left_id"], pair["right_id"])
         result.append(pair)
@@ -137,25 +181,41 @@ def keys_to_phase(key_a, key_b):
 
 def compute(client, task):
     f = client.compute(task)
-    progress(f)
+    while True:
+        try:
+            progress(f)
+            break
+        except OSError:
+            print("Timeout starting progressbar... trying again")
+            time.sleep(1)
+    print()
     return client.gather(f)
 
 
 if __name__ == "__main__":
-    client = Client(n_workers=8, threads_per_worker=1, memory_limit="1GB")
+    client = Client(n_workers=8, threads_per_worker=1, memory_limit="3GB")
     print(client)
 
+    pairs_linkages = create_pairs_linkages(
+        "./data/linkages/linkages-20200803145654.json"
+    )
     pairs_positive = create_pairs_positive(
         "./data/entities/legal_entities-multi_name/*.json"
     )
     pairs_negative = create_pairs_negative("./data/collections/*.json")
 
-    n_positive = compute(client, pairs_positive.count())
-    n_negative = compute(client, pairs_negative.count())
-    print(f"positive: {n_positive}, negative: {n_negative}")
+    n_pairs_linkages = compute(client, pairs_linkages.count())
+    n_pairs_positive = compute(client, pairs_positive.count())
+    n_pairs_negative = compute(client, pairs_negative.count())
+    N = n_pairs_linkages + n_pairs_positive + n_pairs_negative
+    print(
+        f"linkages: {n_pairs_linkages}, positive: {n_pairs_positive}, negative: {n_pairs_negative}"
+    )
 
-    pairs = dask.bag.concat([pairs_negative, pairs_positive])
-    df = pairs_to_dataframe(pairs)
+    pairs = dask.bag.concat([pairs_linkages, pairs_negative, pairs_positive])
+    df = pairs_to_dataframe(pairs).repartition(npartitions=N // 10000)
+    n_positive = compute(client, df.judgement.sum())
+    print(f"n_pairs: {N}, n_positive: {n_positive}, pct: {n_positive / N}")
     print(df.head(10))
 
     # df = bag.to_dataframe()
