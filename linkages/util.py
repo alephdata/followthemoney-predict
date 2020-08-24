@@ -1,14 +1,24 @@
 import json
 
 import numpy as np
-from sklearn.metrics import  confusion_matrix
+from sklearn.metrics import confusion_matrix
+
+
+def load_jsonl(fd):
+    for line in fd:
+        data = json.loads(line)
+        yield data
 
 
 def load_links(fd):
-    for line in fd:
-        data = json.loads(line)
+    for data in load_jsonl(fd):
         if data["entity"].get("schema") and data.get("decision") is not None:
             yield data
+
+
+def load_collection(fd):
+    yield from load_jsonl(fd)
+
 
 def print_important_features(fields, scores):
     scores = np.asarray(scores)

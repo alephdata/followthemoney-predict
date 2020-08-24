@@ -7,3 +7,6 @@ tqdm
 numpy
 xgboost
 sklearn
+
+dask[bag,dataframe,distributed]
+bokeh

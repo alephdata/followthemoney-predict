@@ -6,7 +6,8 @@ least provides a decent API for the rest of the module.
 Most of this can be replaced with Pandas and a simpler wrapper class.
 """
 from collections import defaultdict, Counter
-from itertools import combinations, product, islice
+from itertools import combinations, product, islice, groupby
+import math
 import random
 
 from tqdm import tqdm
@@ -23,8 +24,7 @@ FIELDS_BAN_LIST = set(["alephUrl", "modifiedAt", "retrievedAt", "sourceUrl"])
 
 
 class Sampler:
-    def __init__(self, fd):
-        links = list(util.load_links(fd))
+    def __init__(self, links):
         features_entities, targets_raw, profiles_raw = zip(*emit_pairs(links))
         X, features, ftm_scores, fields, schemas, indicies = extract_data(
             features_entities
@@ -96,6 +96,71 @@ class Sampler:
         print("=" * 20)
 
 
+def create_collection_pseudopairs(entities):
+    comparisons = {}
+    num_properties = Counter()
+    entities_lookup = {e["id"]: e for e in entities}
+    proxies = [model.get_proxy(e) for e in entities]
+    for A in proxies:
+        num_properties[A.id] = sum(len(p) for p in A.properties) / len(A.properties)
+    N = math.factorial(len(proxies)) / (math.factorial(len(proxies) - 2) * 2)
+    with tqdm(total=N, desc="Comparing collection") as pbar:
+        for i, A in enumerate(proxies[:-1]):
+            best_score = 0.1
+            best_key = None
+            for B in proxies[i + 1 :]:
+                key = [A.id, B.id]
+                key.sort()
+                score = compare.compare(model, A, B)
+                pbar.update(1)
+                if score > best_score:
+                    best_score = score
+                    best_key = tuple(key)
+            if best_key:
+                comparisons[tuple(key)] = score
+                pbar.set_description(
+                    f"Comparing collection ({len(comparisons)} candidates)"
+                )
+    while comparisons:
+        (key,) = random.choices(
+            list(comparisons.keys()), weights=list(comparisons.values())
+        )
+        A_id, B_id = key
+        comparisons.pop(key)
+        profile_id = f"{A_id}_{B_id}"
+        yield {
+            "profile_id": profile_id,
+            "decision": False,
+            "entity_id": A_id,
+            "entity": entities_lookup[A_id],
+        }
+        yield {
+            "profile_id": profile_id,
+            "decision": False,
+            "entity_id": B_id,
+            "entity": entities_lookup[B_id],
+        }
+        if num_properties:
+            (A_id,) = random.choices(
+                list(num_properties.keys()), weights=list(num_properties.values())
+            )
+            num_properties.pop(A_id)
+            A = entities_lookup[A_id]
+            A_entities = islice(create_split_entity(A), 5)
+            for A_entity in A_entities:
+                yield {
+                    "profile_id": A_id,
+                    "decision": True,
+                    "entity_id": A_id,
+                    "entity": A_entity,
+                }
+
+
+def create_split_proxies(data):
+    for split in create_split_entity(data):
+        yield model.get_proxy(split)
+
+
 def create_split_entity(data):
     properties = {
         k: ensure_list(v)
@@ -107,7 +172,7 @@ def create_split_entity(data):
         random.shuffle(p)
     for values in product(*properties.values()):
         new_properties = {f: [v] for f, v in zip(fields, values)}
-        yield model.get_proxy({**data, "properties": new_properties})
+        yield {**data, "properties": new_properties}
 
 
 def emit_pairs(
@@ -133,8 +198,8 @@ def emit_pairs(
                 unused_entities.discard((profile, A["entity_id"]))
                 unused_entities.discard((profile, B["entity_id"]))
                 if split_entities:
-                    A_entities = create_split_entity(A["entity"])
-                    B_entities = create_split_entity(B["entity"])
+                    A_entities = create_split_proxies(A["entity"])
+                    B_entities = create_split_proxies(B["entity"])
                     for A_entity, B_entity in product(
                         islice(A_entities, num_split_entities),
                         islice(B_entities, num_split_entities),
@@ -161,7 +226,7 @@ def emit_pairs(
                 else:
                     profile, links = random.choice(list(profiles.items()))
                     link = random.choice(links)
-                entities = create_split_entity(link["entity"])
+                entities = create_split_proxies(link["entity"])
                 try:
                     A_entity, B_entity = list(islice(entities, 2))
                     yield (A_entity, B_entity), True, profile
@@ -255,6 +320,7 @@ def train_test_split(
     *arrays, test_pct=0.25, correlation_marker=None, balance_classes=None, shuffle=True
 ):
     M = len(arrays[0])
+    print("Num samples:", M)
     arrays = (*arrays, list(range(M)))
     N = len(arrays)
     assert all(len(a) == M for a in arrays)
