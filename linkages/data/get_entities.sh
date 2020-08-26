@@ -9,11 +9,19 @@ function paginate() {
     done;
 }
 
+mkdir -p entities/raw
+mkdir -p entities/raw-latest/
+
 now=$( date +%s )
 paginate "${ALEPHCLIENT_HOST}/api/2/collections?api_key=${ALEPHCLIENT_API_KEY}" | jq -r '.results[].foreign_id' | (while read foreign_id; do
     echo "Getting foreign_id ${foreign_id}"
     foreign_id_fname=$( echo ${foreign_id} | tr ' ' '_' )
-    alephclient stream-entities -s LegalEntity -f "${foreign_id}" | pv -l > raw/entities/legal_entity-${foreign_id_fname}-${now}.json
+    datafile="entities/raw/legal_entity-${foreign_id_fname}-${now}.json"
+    latestfile="entities/raw-latest/legal_entity-${foreign_id_fname}.json"
+    alephclient stream-entities -s LegalEntity -f "${foreign_id}" | pv -l > $datafile
+    ln -sf ../raw/$( basename $datafile ) $latestfile
 done; )
 
 find entities/raw/ -size  0 -print -delete
+find entities/raw-latest/ -type l -exec test ! -e {} \; -delete
+
