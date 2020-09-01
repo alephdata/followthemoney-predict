@@ -2,3 +2,4 @@ collections/
 linkages/
 entities/
 entity_test.parquet
+*.parquet

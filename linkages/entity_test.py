@@ -1,30 +1,81 @@
 import itertools as IT
-from collections import deque
 import operator
 import random
 import time
+from collections import deque
 from zlib import crc32
+import warnings
+import os
 
-import dask
-import dask.bag
+import numpy as np
 import ujson
-from dask.distributed import Client, progress
-from pandas import StringDtype, CategoricalDtype, Int32Dtype, BooleanDtype
+from followthemoney import compare
+from followthemoney.exc import InvalidData
+from pandas import BooleanDtype, CategoricalDtype, StringDtype
 
-dask.config.set({"temporary_directory": "/tmp/dask/"})
+
+USE_DASK = os.environ.get("FTM_PREDICT_USE_DASK").lower() == "true"
+N_LINES_READ = None
+
+
+if USE_DASK:
+    try:
+        import dask
+        import dask.bag as pipeline
+        from dask.cache import Cache
+        from dask.distributed import Client, progress
+    except ImportError:
+        warnings.warn("Dask not found... Using default pipeline", ImportWarning)
+        USE_DASK = False
+if not USE_DASK:
+    import dasklike as pipeline
 
 
 PHASES = {
     "train": 0.8,
-    "valid": 0.1,
-    "test": 0.1,
+    "test": 0.2,
 }
+
+FEATURE_KEYS = [
+    "name",
+    "country",
+    "registrationNumber",
+    "incorporationDate",
+    "address",
+    "jurisdiction",
+    "dissolutionDate",
+    "mainCountry",
+    "ogrnCode",
+    "innCode",
+    "kppCode",
+    "fnsCode",
+    "email",
+    "phone",
+    "website",
+    "idNumber",
+    "birthDate",
+    "nationality",
+    "accountNumber",
+    "iban",
+    "wikidataId",
+    "wikipediaUrl",
+    "deathDate",
+    "cikCode",
+    "irsCode",
+    "vatCode",
+    "okpoCode",
+    "passportNumber",
+    "taxNumber",
+    "bvdId",
+]
+FEATURE_IDXS = dict(zip(FEATURE_KEYS, range(len(FEATURE_KEYS))))
 
 SCHEMAS = set(
     ("Person", "Company", "LegalEntity", "Organization", "PublicBody", "BankAccount")
 )
 
-FIELDS_TYPES = {
+FIELDS_BAN_LIST = set(["alephUrl", "modifiedAt", "retrievedAt", "sourceUrl"])
+DATAFRAME_FIELDS_TYPES = {
     "name": StringDtype(),
     "schema": CategoricalDtype(SCHEMAS),
     "id": StringDtype(),
@@ -43,13 +94,15 @@ FIELDS_TYPES = {
     "motherName": StringDtype(),
     "nationality": StringDtype(),
 }
-FIELDS = set(FIELDS_TYPES.keys())
-META = {
-    f"{which}_{c}": t for which in ("left", "right") for c, t in FIELDS_TYPES.items()
+DATAFRAME_META = {
+    f"{which}_{c}": t
+    for which in ("left", "right")
+    for c, t in DATAFRAME_FIELDS_TYPES.items()
 }
-META["judgement"] = BooleanDtype()
-META["weight"] = "float"
-META["phase"] = CategoricalDtype(PHASES.keys())
+DATAFRAME_META["judgement"] = BooleanDtype()
+DATAFRAME_META["source"] = CategoricalDtype(["linkage", "negative", "positive"])
+DATAFRAME_META["phase"] = CategoricalDtype(PHASES.keys())
+DATAFRAME_META["features"] = object
 
 
 DEDUPED_COLLECTION_FIDS = set(
@@ -89,12 +142,18 @@ def pair_combinations(sequence):
         deque(IT.islice(sequence2, i + 2), maxlen=0)
 
 
-def multi_name(entity):
+def has_properties(entity):
+    return "properties" in entity and len(entity["properties"]) >= 1
+
+
+def has_multi_name(entity):
     return len(set(n for n in entity["properties"].get("name", []) if "@" not in n)) > 1
 
 
-def entity_to_samples(entity, fields=FIELDS):
-    props = {k: vs for k, vs in entity.pop("properties").items() if k in fields}
+def entity_to_samples(entity):
+    props = {
+        k: vs for k, vs in entity.pop("properties").items() if k not in FIELDS_BAN_LIST
+    }
     samples = []
     names = set(props.pop("name", []))
     for name in names:
@@ -102,9 +161,9 @@ def entity_to_samples(entity, fields=FIELDS):
             n_props = random.randrange(0, len(props))
             props_keep = random.sample(props.keys(), n_props)
             props_sample = {k: random.choice(props[k]) for k in props_keep}
-            samples.append({"name": name, **entity, **props_sample})
+            samples.append({**entity, "properties": {"name": name, **props_sample}})
         else:
-            samples.append({"name": name, **entity})
+            samples.append({**entity, "properties": {"name": name}})
     return samples
 
 
@@ -120,43 +179,50 @@ def load_json(item):
     return data
 
 
-def create_pairs_positive(path_glob, weight=0.5):
+def create_pairs_positive(path_glob, n_samples=None):
     b = (
-        dask.bag.read_text(path_glob, include_path=True)
+        pipeline.read_text(path_glob, include_path=True)
         .map(load_json)
-        .filter(multi_name)
+        .filter(has_multi_name)
     )
-    b = b.map(entity_to_samples).flatten()
+    if n_samples:
+        b = b.take(n_samples, compute=False)
     b = (
-        b.groupby(operator.itemgetter("id"))
-        .map(operator.itemgetter(1))
-        .map(pairs_from_group, judgement=True, weight=weight, replacement=False)
+        b.map(entity_to_samples)
+        .map(pairs_from_group, judgement=True, source="positive", replacement=False)
         .flatten()
     )
+    b = b.map(pairs_calc_ftm_features).map(pairs_to_flat)
     return b
 
 
-def create_pairs_negative(path_glob, weight=0.5):
-    b = dask.bag.read_text(path_glob, include_path=True).map(load_json)
+def create_pairs_negative(path_glob, n_samples=None):
+    b = pipeline.read_text(path_glob, include_path=True).map(load_json)
+    if n_samples:
+        b = b.take(n_samples, compute=False)
     b = b.map(entity_to_samples).flatten()
     b = (
         b.groupby(operator.itemgetter("path"))
         .map(operator.itemgetter(1))
-        .map(pairs_from_group, judgement=False, weight=weight, replacement=False)
+        .map(pairs_from_group, judgement=False, source="negative", replacement=False)
         .flatten()
     )
+    b = b.map(pairs_calc_ftm_features).map(pairs_to_flat)
     return b
 
 
-def create_pairs_linkages(path_glob, weight=1.0):
+def create_pairs_linkages(path_glob, n_samples=None):
     b = (
-        dask.bag.read_text(path_glob, include_path=True)
+        pipeline.read_text(path_glob, include_path=True)
         .map(load_json)
         .map(normalize_linkage)
+        .filter(has_properties)
     )
+    if n_samples:
+        b = b.take(n_samples, compute=False)
     b = b.map(entity_to_samples).flatten()
     b = (
-        b.groupby(operator.itemgetter("profile_id"))
+        b.groupby(operator.itemgetter("profile_id"), sort=True)
         .map(operator.itemgetter(1))
         .map(
             pairs_from_group,
@@ -164,20 +230,21 @@ def create_pairs_linkages(path_glob, weight=1.0):
                 a.get("decision", False) and b.get("decision", False)
             ),
             replacement=True,
-            weight=weight,
+            source="linkage",
         )
         .flatten()
     )
+    b = b.map(pairs_calc_ftm_features).map(pairs_to_flat)
     return b
 
 
-def pairs_to_dataframe(bag, field_pct=0.05):
-    return bag.to_dataframe(meta=META)
+def pairs_to_dataframe(bag):
+    return bag.to_dataframe(meta=DATAFRAME_META)
 
 
-def pairs_from_group(
-    group, judgement, weight=0.5, replacement=False, max_pairs=5_000_000
-):
+def pairs_from_group(group, judgement, source, replacement=False, max_pairs=5_000_000):
+    from followthemoney import model
+
     N = len(group)
     if N < 2:
         return []
@@ -194,19 +261,79 @@ def pairs_from_group(
     for i, j in indicies:
         if len(result) >= max_pairs:
             break
-        curjudgement = judgement(group[i], group[j])
-        if curjudgement is False and group[i]["id"] == group[j]["id"]:
+        left, right = group[i], group[j]
+        curjudgement = judgement(left, right)
+        if curjudgement is False and left["id"] == right["id"]:
             continue
-        pair = {
-            f"{which}_{k}": v
-            for which, sample in (("left", group[i]), ("right", group[j]))
-            for k, v in sample.items()
-        }
-        pair["judgement"] = curjudgement
-        pair["weight"] = weight
-        pair["phase"] = keys_to_phase(pair["left_id"], pair["right_id"])
-        result.append(pair)
+        try:
+            schema = model.common_schema(left["schema"], right["schema"])
+        except InvalidData:
+            continue
+        result.append(
+            {
+                "left": left,
+                "right": right,
+                "judgement": curjudgement,
+                "source": source,
+                "schema": schema.name,
+                "phase": keys_to_phase(left["id"], right["id"]),
+            }
+        )
     return result
+
+
+def pairs_to_flat(item):
+    left = item.pop("left")
+    right = item.pop("right")
+    pair = {
+        f"{which}_{k}": v
+        for which, entity in (("left", left), ("right", right))
+        for k, v in IT.chain(entity["properties"].items(), entity.items())
+    }
+    return {**item, **pair}
+
+
+def create_model_proxy(entity, cache={}):
+    from followthemoney import model
+
+    eid = entity["id"]
+    try:
+        return cache[id]
+    except KeyError:
+        properties = {k: [v] for k, v in entity["properties"].items()}
+        cache[eid] = model.get_proxy({**entity, "properties": properties})
+        return cache[eid]
+
+
+def pairs_calc_ftm_features(pair):
+    from followthemoney import model
+
+    A = create_model_proxy(pair["left"])
+    B = create_model_proxy(pair["right"])
+    features = np.zeros(len(FEATURE_KEYS))
+    features[FEATURE_IDXS["name"]] = compare.compare_names(A, B)
+    features[FEATURE_IDXS["country"]] = compare.compare_countries(A, B)
+    schema = model.schemata[pair["schema"]]
+    for name, prop in schema.properties.items():
+        if name in FIELDS_BAN_LIST:
+            continue
+        elif prop.name not in FEATURE_IDXS:
+            continue
+        weight = compare.MATCH_WEIGHTS.get(prop.type)
+        if not weight or not prop.matchable:
+            continue
+        try:
+            A_values = A.get(name)
+            B_values = B.get(name)
+        except InvalidData:
+            continue
+        if not A_values or not B_values:
+            continue
+        prop_score = prop.type.compare_sets(A_values, B_values)
+        feature_idx = FEATURE_IDXS[prop.name]
+        features[feature_idx] = prop_score
+    pair["features"] = features
+    return pair
 
 
 def keys_to_phase(key_a, key_b):
@@ -234,46 +361,42 @@ def compute(client, task, desc=None):
     return client.gather(f)
 
 
+def onehot_partition(partition, n_classes=2):
+    partition = list(partition)
+    data = []
+    for i, l in enumerate(partition):
+        d = [0] * n_classes
+        d[l] = 1
+        data.append(d)
+    return data
+
+
 if __name__ == "__main__":
-    # client = Client(n_workers=4, threads_per_worker=1, memory_limit="2GB")
-    client = Client(n_workers=1, threads_per_worker=12)
-    print(client)
+    if USE_DASK:
+        dask.config.set({"temporary_directory": "/tmp/dask/"})
+        cache = Cache(2e9)
+        cache.register()
+        client = Client(n_workers=1, threads_per_worker=32)
+        print(client)
 
     pairs_linkages = create_pairs_linkages(
-        "./data/linkages/linkages-20200803145654.json"
+        "./data/linkages/linkages-20200803145654.json", n_samples=N_LINES_READ,
     )
     pairs_negative = create_pairs_negative(
         [
             f"./data/entities/raw-latest/legal_entity-{collection.replace(' ', '_')}.json"
             for collection in DEDUPED_COLLECTION_FIDS
-        ]
+        ],
+        n_samples=N_LINES_READ,
     )
     pairs_positive = create_pairs_positive(
-        "./data/entities/legal_entities-multi_name/*.json"
+        "./data/entities/legal_entities-multi_name/*.json", n_samples=N_LINES_READ,
     )
 
-    # n_pairs_linkages = compute(
-    #    client, pairs_linkages.count(), desc="Calculating Linkages"
-    # )
-    # n_pairs_negative = compute(
-    #    client, pairs_negative.count(), desc="Calculating Negatives"
-    # )
-    # n_pairs_positive = compute(
-    #    client, pairs_positive.count(), desc="Calculating Positives"
-    # )
-    # N = n_pairs_linkages + n_pairs_positive + n_pairs_negative
-    # print(
-    #    f"linkages: {n_pairs_linkages}, positive: {n_pairs_positive}, negative: {n_pairs_negative}"
-    # )
+    pairs = pipeline.concat([pairs_linkages, pairs_negative, pairs_positive])
+    df = pairs.to_dataframe(meta=DATAFRAME_META)
 
-    pairs = dask.bag.concat([pairs_linkages, pairs_negative, pairs_positive])
-    df = pairs_to_dataframe(pairs)
-    df.to_parquet("./data/entity_test.parquet", schema="infer")
-    # df = compute(client, ddf.persist(), desc="Pinning DataFrame to memory")
-
-    # n_positive = compute(client, df.judgement.sum(), desc="Counting Positives")
-    # print(f"n_pairs: {N}, n_positive: {n_positive}, pct: {n_positive / N}")
-    # print(df.head(10))
-
-    # df = bag.to_dataframe()
-    # print(df.head(10))
+    parquet_params = {}
+    if USE_DASK:
+        parquet_params = {"schema": "infer"}
+    df.to_parquet("./data/pairs_all.parquet", **parquet_params)
