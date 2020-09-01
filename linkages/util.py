@@ -1,7 +1,18 @@
+import itertools as IT
 import json
 
 import numpy as np
 from sklearn.metrics import confusion_matrix
+
+
+class DefaultNone(object):
+    pass
+
+
+def merge_iters(*iters):
+    fillvalue = DefaultNone
+    for items in IT.zip_longest(*iters, fillvalue=fillvalue):
+        yield from filter(lambda i: i is not fillvalue, items)
 
 
 def load_jsonl(fd):

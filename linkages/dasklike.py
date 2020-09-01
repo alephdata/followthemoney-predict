@@ -1,19 +1,25 @@
 import itertools as IT
+import os
+import random
 from functools import partial, wraps
 from pathlib import Path
-import os
 
 import pandas as pd
 from tqdm import tqdm
 
+from .util import merge_iters
 
 DEFAULT_CHUNK_SIZE = 65_536
+
+
+def from_sequence(iter_, *args, **kwargs):
+    return DaskLike(iter_)
 
 
 def dasklike_iter(fxn):
     @wraps(fxn)
     def _(*args, **kwargs):
-        return DaskLike(fxn(*args, **kwargs))
+        return from_sequence(fxn(*args, **kwargs))
 
     return _
 
@@ -28,14 +34,14 @@ def chunk_stream(stream, chunk_size=None):
 
 @dasklike_iter
 def concat(streams):
-    return IT.chain.from_iterable(streams)
+    return merge_iters(*streams)
 
 
 @dasklike_iter
 def read_text(path_glob, include_path=False, progress=True):
     if not isinstance(path_glob, (list, tuple)):
         path_glob = [path_glob]
-    filenames = list(IT.chain.from_iterable(Path().glob(pg) for pg in path_glob))
+    filenames = list(IT.chain.from_iterable(Path().glob(str(pg)) for pg in path_glob))
     if progress:
         path_glob_str = os.path.commonprefix(filenames)
         filenames = tqdm(filenames, desc=f"Reading glob {path_glob_str}", leave=False)
@@ -88,7 +94,21 @@ class DaskLike:
         data = IT.islice(take_stream, N)
         if compute:
             return list(data)
-        return DaskLike(data)
+        return from_sequence(data)
+
+    @dasklike_iter
+    def debug_counter(self, desc):
+        for i, item in enumerate(self.stream):
+            print(f"[{desc}] {i}")
+            yield item
+
+    @dasklike_iter
+    def debug_sampler(self, desc, proba):
+        for item in self.stream:
+            if random.random() < proba:
+                print(f"[{desc}] Sample:")
+                print(item)
+            yield item
 
     def to_dataframe(
         self, meta=None, columns=None, partition_size=DEFAULT_CHUNK_SIZE, progress=True
