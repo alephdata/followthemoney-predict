@@ -3,13 +3,16 @@ import os
 import random
 from functools import partial, wraps
 from pathlib import Path
+import gzip
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from .util import merge_iters
 
-DEFAULT_CHUNK_SIZE = 65_536
+DEFAULT_CHUNK_SIZE = 8_192
 
 
 def from_sequence(iter_, *args, **kwargs):
@@ -24,7 +27,7 @@ def dasklike_iter(fxn):
     return _
 
 
-def chunk_stream(stream, chunk_size=None):
+def chunk_stream(stream, chunk_size=DEFAULT_CHUNK_SIZE):
     while True:
         data = list(IT.islice(stream, chunk_size))
         if not data:
@@ -34,11 +37,11 @@ def chunk_stream(stream, chunk_size=None):
 
 @dasklike_iter
 def concat(streams):
-    return merge_iters(*streams)
+    return IT.chain.from_iterable(streams)
 
 
 @dasklike_iter
-def read_text(path_glob, include_path=False, progress=True):
+def read_text(path_glob, include_path=False, compression=None, progress=True):
     if not isinstance(path_glob, (list, tuple)):
         path_glob = [path_glob]
     filenames = list(IT.chain.from_iterable(Path().glob(str(pg)) for pg in path_glob))
@@ -46,7 +49,11 @@ def read_text(path_glob, include_path=False, progress=True):
         path_glob_str = os.path.commonprefix(filenames)
         filenames = tqdm(filenames, desc=f"Reading glob {path_glob_str}", leave=False)
     for filename in filenames:
-        with open(filename, "r") as fd:
+        if filename.suffix.endswith(".gz") or compression == "gzip":
+            openfxn = gunzip.open
+        else:
+            openfxn = open
+        with openfxn(filename, "r") as fd:
             if progress:
                 fd = tqdm(fd, desc=filename.name, leave=False)
             for line in fd:
@@ -125,3 +132,23 @@ class DaskLike:
             df_chunk = pd.DataFrame(chunk, columns=columns)
             df = df.append(df_chunk, ignore_index=True)
         return df
+
+    def to_parquet(
+        self, filename, meta, partition_size=DEFAULT_CHUNK_SIZE, progress=True
+    ):
+        writer = None
+        columns = list(meta.keys())
+        chunks = chunk_stream(self.stream, chunk_size=partition_size)
+        if progress:
+            chunks = tqdm(
+                chunks, desc="Streaming to Parquet", unit_scale=partition_size
+            )
+        for chunk in chunks:
+            df_chunk = pd.DataFrame(chunk, columns=columns).astype(meta)
+            if writer is None:
+                schema = pa.Schema.from_pandas(df_chunk, preserve_index=False)
+                writer = pq.ParquetWriter(filename, schema)
+            table = pa.Table.from_pandas(df_chunk, schema=schema)
+            writer.write_table(table)
+        writer.close()
+        return writer

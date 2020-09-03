@@ -1,6 +1,5 @@
 from pandas import BooleanDtype, CategoricalDtype, StringDtype
 
-
 PHASES = {
     "train": 0.8,
     "test": 0.2,
@@ -69,9 +68,7 @@ FEATURE_KEYS = [
 ]
 FEATURE_IDXS = dict(zip(FEATURE_KEYS, range(len(FEATURE_KEYS))))
 
-SCHEMAS = set(
-    ("Person", "Company", "LegalEntity", "Organization", "PublicBody", "BankAccount")
-)
+SCHEMAS = set(("Person", "Company", "LegalEntity", "Organization", "PublicBody"))
 
 FIELDS_BAN_SET = set(["alephUrl", "modifiedAt", "retrievedAt", "sourceUrl"])
 DATAFRAME_FIELDS_TYPES = {
@@ -100,7 +97,7 @@ DATAFRAME_META = {
     for c, t in DATAFRAME_FIELDS_TYPES.items()
 }
 DATAFRAME_META["judgement"] = BooleanDtype()
-DATAFRAME_META["source"] = CategoricalDtype(["linkage", "negative", "positive"])
+DATAFRAME_META["source"] = CategoricalDtype(["profile", "negative", "positive"])
 DATAFRAME_META["phase"] = CategoricalDtype(PHASES.keys())
 DATAFRAME_META["features"] = object
 DATAFRAME_META["schema"] = StringDtype()

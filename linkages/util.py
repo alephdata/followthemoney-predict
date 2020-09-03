@@ -1,5 +1,6 @@
 import itertools as IT
 import json
+from collections import deque
 
 import numpy as np
 from sklearn.metrics import confusion_matrix
@@ -13,6 +14,14 @@ def merge_iters(*iters):
     fillvalue = DefaultNone
     for items in IT.zip_longest(*iters, fillvalue=fillvalue):
         yield from filter(lambda i: i is not fillvalue, items)
+
+
+def pair_combinations(sequence):
+    sequence2 = IT.cycle(sequence)
+    next(sequence2)
+    for i in range(len(sequence) - 1):
+        yield from zip(sequence[: -(i + 1)], sequence2)
+        deque(IT.islice(sequence2, i + 2), maxlen=0)
 
 
 def load_jsonl(fd):
@@ -51,4 +60,3 @@ def print_confusion_per_schema(model, samples, targets, schemas):
         prediction = model.predict(samples[idxs])
         print(f"Schema: {schema.name}")
         print(confusion_matrix(targets[idxs], prediction))
-

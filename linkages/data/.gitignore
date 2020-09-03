@@ -1,6 +1,2 @@
-collections/
-linkages/
-entities/
-entity_test.parquet
 *.parquet
-profiles/
+*_cache/

@@ -4,64 +4,67 @@ from alephclient.api import AlephAPI
 from tqdm import tqdm
 
 from .. import const
-from ..util import merge_iters
-from .common import StreamSet
+from .common import StreamSet, cache_entityset, cache_collection, retry_aleph_exception
+
+MAX_ENTITIES_PER_COLLECTION = 1_000_000
+ALEPH_PARAMS = {"retries": 10}
 
 
-def get_profiles(api):
-    entityset_query = api.entitysets(set_types="profile")
-    entitysets = (es["id"] for es in entityset_query)
-    total = entityset_query.result["total"]
+def get_profiles():
+    api = AlephAPI(**ALEPH_PARAMS)
+    entitysets = api.entitysets(set_types="profile")
+    total = entitysets.result.get("total")
     for entityset in tqdm(entitysets, desc="Reading Profiles", total=total):
-        setitems = api.entitysetitems(entityset, publisher=True)
-        yield from zip(setitems, IT.cycle([entityset]))
+        yield from get_entityset(entityset)
 
 
-def get_collection_entities(api, collection):
-    fid = collection["foreign_id"]
+@cache_entityset
+@retry_aleph_exception
+def get_entityset(entityset):
+    api = AlephAPI(**ALEPH_PARAMS)
+    setitems = IT.islice(
+        api.entitysetitems(entityset["id"], publisher=True), MAX_ENTITIES_PER_COLLECTION
+    )
+    setitems = tqdm(
+        setitems, desc=f"Reading EntitySet items: {entityset['id']}", leave=False,
+    )
+    yield from setitems
+
+
+@cache_collection
+@retry_aleph_exception
+def get_entities(collection):
+    api = AlephAPI(**ALEPH_PARAMS)
     entities = api.stream_entities(collection, schema=const.SCHEMAS, publisher=True)
-    entities = zip(entities, IT.cycle([fid]))
-    yield from tqdm(entities, desc="Reading Collection Entities", leave=False)
+    entities = IT.islice(entities, MAX_ENTITIES_PER_COLLECTION)
+    entities = tqdm(
+        entities,
+        desc=f"Reading Collection Entities: {collection['foreign_id']}",
+        leave=False,
+    )
+    yield from entities
 
 
-def _entities_negative(api, negative_collections):
+def entities_negative(negative_collections):
+    api = AlephAPI(**ALEPH_PARAMS)
     for fid in tqdm(negative_collections, desc="Reading Negatives"):
         collection = api.get_collection_by_foreign_id(fid)
-        yield from get_collection_entities(api, collection)
+        yield from get_entities(collection)
 
 
-def _entities_positive(api, negative_collections):
+def entities_positive():
+    api = AlephAPI(**ALEPH_PARAMS)
     collections = api.filter_collections("*")
-    total = collections.result["total"]
-    for collection in tqdm(collections, desc="Reading Positives", total=total):
-        fid = collection["foreign_id"]
-        if fid in negative_collections:
-            continue
-        yield from get_collection_entities(api, collection)
-
-
-def entities_neg_pos_multiplex(api, negative_collections):
-    entities_neg, entities_pos = IT.tee(_entities_negative(api, negative_collections))
-    entities_pos_chain = merge_iters(
-        _entities_positive(api, negative_collections), entities_pos,
-    )
-    return entities_neg, entities_pos_chain
-
-
-def map_path(item):
-    data, path = item
-    data["path"] = path
-    return data
+    for collection in tqdm(collections, desc="Reading Positives"):
+        yield from get_entities(collection)
 
 
 def get_data_streams(pipeline, negative_collections=const.NEGATIVE_COLLECTION_FIDS):
-    api = AlephAPI()
-    profile_stream = get_profiles(api)
-    negative_stream, positive_stream = entities_neg_pos_multiplex(
-        api, negative_collections
-    )
+    profile_stream = get_profiles()
+    negative_stream = entities_negative(negative_collections)
+    positive_stream = entities_positive()
     return StreamSet(
-        pipeline.from_sequence(profile_stream).map(map_path),
-        pipeline.from_sequence(negative_stream).map(map_path),
-        pipeline.from_sequence(positive_stream).map(map_path),
+        pipeline.from_sequence(profile_stream),
+        pipeline.from_sequence(negative_stream),
+        pipeline.from_sequence(positive_stream),
     )

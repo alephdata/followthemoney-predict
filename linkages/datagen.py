@@ -3,7 +3,6 @@ import operator
 import os
 import random
 import warnings
-from collections import deque
 from pathlib import Path
 from zlib import crc32
 
@@ -12,6 +11,7 @@ from followthemoney import compare
 from followthemoney.exc import InvalidData
 
 from . import const
+from .util import pair_combinations
 
 USE_DASK = os.environ.get("FTM_PREDICT_USE_DASK", "").lower() == "true"
 N_LINES_READ = None
@@ -35,14 +35,6 @@ if USE_DASK:
         USE_DASK = False
 if not USE_DASK:
     from . import dasklike as pipeline  # NOQA
-
-
-def pair_combinations(sequence):
-    sequence2 = IT.cycle(sequence)
-    next(sequence2)
-    for i in range(len(sequence) - 1):
-        yield from zip(sequence[: -(i + 1)], sequence2)
-        deque(IT.islice(sequence2, i + 2), maxlen=0)
 
 
 def has_properties(entity):
@@ -107,7 +99,7 @@ def create_pairs_negative(data_stream, n_lines_read=None):
         b = b.debug_counter("Negative Stream").debug_sampler("Negative Stream", 0.001)
     b = b.map(entity_to_samples).flatten()
     b = (
-        b.groupby(operator.itemgetter("path"))
+        b.groupby(operator.itemgetter("collection_id"))
         .map(operator.itemgetter(1))
         .map(pairs_from_group, judgement=False, source="negative", replacement=False)
         .flatten()
@@ -118,7 +110,7 @@ def create_pairs_negative(data_stream, n_lines_read=None):
     return b
 
 
-def create_pairs_profiles(data_stream, n_lines_read=None):
+def create_pairs_profile(data_stream, n_lines_read=None):
     judgement_map = {
         "negative": False,
         "positive": True,
@@ -259,12 +251,10 @@ def keys_to_phase(key_a, key_b):
             return phase
 
 
-def create_dataframe_from_streams(
+def create_full_stream(
     stream_set, meta=const.DATAFRAME_META, n_lines_read=N_LINES_READ
 ):
-    pairs_profiles = create_pairs_profiles(
-        stream_set.profile, n_lines_read=n_lines_read
-    )
+    pairs_profile = create_pairs_profile(stream_set.profile, n_lines_read=n_lines_read)
     pairs_negative = create_pairs_negative(
         stream_set.negative, n_lines_read=n_lines_read
     )
@@ -272,27 +262,28 @@ def create_dataframe_from_streams(
         stream_set.positive, n_lines_read=n_lines_read
     )
 
-    pairs = pipeline.concat([pairs_profiles, pairs_negative, pairs_positive])
-    df = pairs.to_dataframe(meta=meta)
-    return df
+    pairs = pipeline.concat([pairs_profile, pairs_negative, pairs_positive])
+    return pairs
 
 
 if __name__ == "__main__":
     from .data_sources import DATA_SOURCES
 
     METHOD = "aleph"
+    parquet_path = (
+        Path(__file__).parent / f"data/pairs.{METHOD}.{N_LINES_READ or 'all'}.parquet"
+    ).relative_to(Path.cwd())
+
     print("Using method:", METHOD)
     print("n lines to read:", N_LINES_READ)
+    print("Writing to:", parquet_path)
 
     stream_set = DATA_SOURCES[METHOD].get_data_streams(pipeline)
-    df = create_dataframe_from_streams(stream_set)
+    pairs = create_full_stream(stream_set)
 
-    parquet_params = {}
     if USE_DASK:
-        parquet_params = {"schema": "infer"}
-    parquet_path = (
-        Path(__file__).parent
-        / f"data/pairs_all.{METHOD}.{N_LINES_READ or 'all'}.parquet"
-    )
-
-    df.to_parquet(parquet_path, **parquet_params)
+        pairs = create_full_stream(stream_set)
+        df = pairs.to_dataframe(meta=const.DATAFRAME_META)
+        df.to_parquet(parquet_path, schema="infer")
+    else:
+        pairs.to_parquet(parquet_path, meta=const.DATAFRAME_META)
