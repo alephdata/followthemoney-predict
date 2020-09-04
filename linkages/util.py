@@ -1,6 +1,7 @@
 import itertools as IT
 import json
 from collections import deque
+from types import GeneratorType
 
 import numpy as np
 from sklearn.metrics import confusion_matrix
@@ -8,6 +9,19 @@ from sklearn.metrics import confusion_matrix
 
 class DefaultNone(object):
     pass
+
+
+def unify_map(fxn, pipeline):
+    if pipeline.IS_DASK:
+
+        def _(*args, **kwargs):
+            result = fxn(*args, **kwargs)
+            if isinstance(result, GeneratorType):
+                return list(result)
+            return result
+
+        return _
+    return fxn
 
 
 def merge_iters(*iters):

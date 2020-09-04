@@ -1,8 +1,6 @@
 import itertools as IT
 import operator
-import os
 import random
-import warnings
 from pathlib import Path
 from zlib import crc32
 
@@ -10,31 +8,12 @@ import numpy as np
 from followthemoney import compare
 from followthemoney.exc import InvalidData
 
+from .pipeline import pipeline
 from . import const
 from .util import pair_combinations
 
-USE_DASK = os.environ.get("FTM_PREDICT_USE_DASK", "").lower() == "true"
-N_LINES_READ = None
+N_LINES_READ = 100
 DEBUG = False
-
-
-if USE_DASK:
-    try:
-        import dask
-        import dask.bag as pipeline
-        from dask.cache import Cache
-        from dask.distributed import Client, progress
-
-        dask.config.set({"temporary_directory": "/tmp/dask/"})
-        cache = Cache(2e9)
-        cache.register()
-        client = Client(n_workers=1, threads_per_worker=32)
-        print(client)
-    except ImportError:
-        warnings.warn("Dask not found... Using default pipeline", ImportWarning)
-        USE_DASK = False
-if not USE_DASK:
-    from . import dasklike as pipeline  # NOQA
 
 
 def has_properties(entity):
@@ -278,10 +257,11 @@ if __name__ == "__main__":
     print("n lines to read:", N_LINES_READ)
     print("Writing to:", parquet_path)
 
+    pipeline.init()
     stream_set = DATA_SOURCES[METHOD].get_data_streams(pipeline)
-    pairs = create_full_stream(stream_set)
+    pairs = create_full_stream(stream_set, n_lines_read=N_LINES_READ)
 
-    if USE_DASK:
+    if pipeline.IS_DASK:
         pairs = create_full_stream(stream_set)
         df = pairs.to_dataframe(meta=const.DATAFRAME_META)
         df.to_parquet(parquet_path, schema="infer")

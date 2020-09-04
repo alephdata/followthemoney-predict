@@ -10,23 +10,12 @@ MAX_ENTITIES_PER_COLLECTION = 1_000_000
 ALEPH_PARAMS = {"retries": 10}
 
 
-def get_profiles():
-    api = AlephAPI(**ALEPH_PARAMS)
-    entitysets = api.entitysets(set_types="profile")
-    total = entitysets.result.get("total")
-    for entityset in tqdm(entitysets, desc="Reading Profiles", total=total):
-        yield from get_entityset(entityset)
-
-
 @cache_entityset
 @retry_aleph_exception
 def get_entityset(entityset):
     api = AlephAPI(**ALEPH_PARAMS)
     setitems = IT.islice(
         api.entitysetitems(entityset["id"], publisher=True), MAX_ENTITIES_PER_COLLECTION
-    )
-    setitems = tqdm(
-        setitems, desc=f"Reading EntitySet items: {entityset['id']}", leave=False,
     )
     yield from setitems
 
@@ -37,34 +26,41 @@ def get_entities(collection):
     api = AlephAPI(**ALEPH_PARAMS)
     entities = api.stream_entities(collection, schema=const.SCHEMAS, publisher=True)
     entities = IT.islice(entities, MAX_ENTITIES_PER_COLLECTION)
-    entities = tqdm(
-        entities,
-        desc=f"Reading Collection Entities: {collection['foreign_id']}",
-        leave=False,
-    )
     yield from entities
+
+
+def get_profiles():
+    api = AlephAPI(**ALEPH_PARAMS)
+    entitysets = api.entitysets(set_types="profile")
+    total = entitysets.result.get("total")
+    for entityset in tqdm(entitysets, desc="Reading Profiles", total=total):
+        yield entityset
 
 
 def entities_negative(negative_collections):
     api = AlephAPI(**ALEPH_PARAMS)
     for fid in tqdm(negative_collections, desc="Reading Negatives"):
         collection = api.get_collection_by_foreign_id(fid)
-        yield from get_entities(collection)
+        yield collection
 
 
 def entities_positive():
     api = AlephAPI(**ALEPH_PARAMS)
     collections = api.filter_collections("*")
     for collection in tqdm(collections, desc="Reading Positives"):
-        yield from get_entities(collection)
+        yield collection
 
 
 def get_data_streams(pipeline, negative_collections=const.NEGATIVE_COLLECTION_FIDS):
-    profile_stream = get_profiles()
-    negative_stream = entities_negative(negative_collections)
-    positive_stream = entities_positive()
-    return StreamSet(
-        pipeline.from_sequence(profile_stream),
-        pipeline.from_sequence(negative_stream),
-        pipeline.from_sequence(positive_stream),
+    profile_stream = (
+        pipeline.from_sequence(get_profiles()).map(get_entityset, pipeline).flatten()
     )
+    negative_stream = (
+        pipeline.from_sequence(entities_negative(negative_collections))
+        .map(get_entities)
+        .flatten()
+    )
+    positive_stream = (
+        pipeline.from_sequence(entities_positive()).map(get_entities).flatten()
+    )
+    return StreamSet(profile_stream, negative_stream, positive_stream,)

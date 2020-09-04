@@ -10,9 +10,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from tqdm import tqdm
 
-from .util import merge_iters
-
 DEFAULT_CHUNK_SIZE = 8_192
+
+
+def init():
+    print("Using DaskLike")
 
 
 def from_sequence(iter_, *args, **kwargs):
@@ -50,7 +52,7 @@ def read_text(path_glob, include_path=False, compression=None, progress=True):
         filenames = tqdm(filenames, desc=f"Reading glob {path_glob_str}", leave=False)
     for filename in filenames:
         if filename.suffix.endswith(".gz") or compression == "gzip":
-            openfxn = gunzip.open
+            openfxn = gzip.open
         else:
             openfxn = open
         with openfxn(filename, "r") as fd:
@@ -65,7 +67,10 @@ def read_text(path_glob, include_path=False, compression=None, progress=True):
 
 class DaskLike:
     def __init__(self, stream=None):
-        self.stream = stream
+        if isinstance(stream, DaskLike):
+            self.stream = stream.stream
+        else:
+            self.stream = stream
 
     def __iter__(self):
         return iter(self.stream)

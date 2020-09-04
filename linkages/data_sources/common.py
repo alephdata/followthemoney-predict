@@ -58,7 +58,7 @@ def cache_with_meta(cache_dir, key_fxn=None):
                 meta_update_at = datetime.fromisoformat(meta["updated_at"])
                 if cache_data.exists() and meta_update_at >= cache_update_at:
                     with gzip.open(cache_data) as fd:
-                        fd = tqdm(fd, desc=f"Reading from cache: {key}", leave=False)
+                        # fd = tqdm(fd, desc=f"Reading from cache: {key}", leave=False)
                         for line in fd:
                             yield orjson.loads(line)
                     return
