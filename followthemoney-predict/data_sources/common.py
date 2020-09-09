@@ -1,5 +1,4 @@
 import time
-from collections import namedtuple
 from pathlib import Path
 from datetime import datetime
 from contextlib import contextmanager
@@ -7,7 +6,7 @@ import gzip
 
 import orjson
 from alephclient.api import AlephException
-from tqdm import tqdm
+
 
 COLLECTION_CACHE_DIR = (
     Path(__file__).parent / Path("../data/collection_cache/")
@@ -15,8 +14,6 @@ COLLECTION_CACHE_DIR = (
 ENTITYSET_CACHE_DIR = (
     Path(__file__).parent / Path("../data/entityset_cache/")
 ).relative_to(Path.cwd())
-
-StreamSet = namedtuple("StreamSet", "profile negative positive".split(" "))
 
 
 @contextmanager

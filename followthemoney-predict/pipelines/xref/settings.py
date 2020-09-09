@@ -1,11 +1,3 @@
-from pandas import BooleanDtype, CategoricalDtype, StringDtype
-
-PHASES = {
-    "train": 0.8,
-    "test": 0.2,
-}
-
-
 NEGATIVE_COLLECTION_FIDS = set(
     (
         "88513394757c43089cd44f817f16ca05",  # Khadija Project Research Data
@@ -71,33 +63,3 @@ FEATURE_IDXS = dict(zip(FEATURE_KEYS, range(len(FEATURE_KEYS))))
 SCHEMAS = set(("Person", "Company", "LegalEntity", "Organization", "PublicBody"))
 
 FIELDS_BAN_SET = set(["alephUrl", "modifiedAt", "retrievedAt", "sourceUrl"])
-DATAFRAME_FIELDS_TYPES = {
-    "name": StringDtype(),
-    "schema": CategoricalDtype(SCHEMAS),
-    "collection_id": StringDtype(),
-    "id": StringDtype(),
-    "country": StringDtype(),
-    "address": StringDtype(),
-    "registrationNumber": StringDtype(),
-    "alias": StringDtype(),
-    "status": StringDtype(),
-    "classification": StringDtype(),
-    "gender": StringDtype(),
-    "firstName": StringDtype(),
-    "lastName": StringDtype(),
-    "birthPlace": StringDtype(),
-    "birthDate": StringDtype(),
-    "idNumber": StringDtype(),
-    "motherName": StringDtype(),
-    "nationality": StringDtype(),
-}
-DATAFRAME_META = {
-    f"{which}_{c}": t
-    for which in ("left", "right")
-    for c, t in DATAFRAME_FIELDS_TYPES.items()
-}
-DATAFRAME_META["judgement"] = BooleanDtype()
-DATAFRAME_META["source"] = CategoricalDtype(["profile", "negative", "positive"])
-DATAFRAME_META["phase"] = CategoricalDtype(PHASES.keys())
-DATAFRAME_META["features"] = object
-DATAFRAME_META["schema"] = StringDtype()

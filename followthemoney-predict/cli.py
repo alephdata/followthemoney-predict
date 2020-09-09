@@ -1,0 +1,79 @@
+import logging
+import sys
+
+import click
+
+from . import data_sources
+from . import workflow
+from . import pipelines
+
+
+@click.group(help="Utility for FollowTheMoney Predict")
+@click.pass_context
+def cli(ctx):
+    if ctx.obj is None:
+        ctx.obj = {}
+    fmt = "%(name)s [%(levelname)s] %(message)s"
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format=fmt)
+
+
+@cli.group()
+@click.option("--output-file", required=True, type=click.File("w"))
+@click.option(
+    "--data-source",
+    default="aleph",
+    type=click.Choice(data_sources.DATA_SOURCES.keys()),
+)
+@click.option("--train-frac", default=0.8, type=click.FloatRange(0, 1))
+@click.option(
+    "--line-read-limit",
+    default=None,
+    type=int,
+    help="Maximum number of lines to read per source",
+)
+@click.option(
+    "--cache-dir", envvar="FTM_PREDICT_CACHE_DIR", default="/tmp/ftm-predict/"
+)
+@click.option(
+    "--workflow",
+    "workflow_type",
+    envvar="FTM_PREDICT_WORKFLOW",
+    type=click.Choice(workflow.WORKFLOWS),
+    default=workflow.WORKFLOWS[0],
+)
+@click.option("--dask-nworkers", default=1)
+@click.option("--dask-threads-per-worker", default=8)
+@click.pass_context
+def data(
+    ctx,
+    output_file,
+    data_source,
+    train_frac,
+    cache_dir,
+    line_read_limit,
+    workflow_type,
+    dask_nworkers,
+    dask_threads_per_worker,
+):
+    ctx.obj["output_file"] = output_file
+    ctx.obj["data_source_name"] = data_source
+    ctx.obj["phases"] = {"train": train_frac, "test": 1 - train_frac}
+
+    ctx.obj["data_source"] = data_sources.DATA_SOURCES[data_source]
+    ctx.obj["line_read_limit"] = line_read_limit
+    ctx.obj["cache_dir"] = cache_dir
+
+    ctx.obj["workflow_type"] = workflow_type
+    ctx.obj["dask_client_kwargs"] = {
+        "n_workers": dask_nworkers,
+        "threads_per_worker": dask_threads_per_worker,
+    }
+    ctx.obj["workflow"] = workflow.create_workflow(
+        ctx.obj["workflow_type"], ctx.obj["cache_dir"], ctx.obj["dask_client_kwargs"]
+    )
+
+
+if __name__ == "__main__":
+    for pipeline_cli in pipelines.CLI:
+        data.add_command(pipeline_cli)
+    cli()

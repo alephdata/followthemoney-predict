@@ -1,16 +1,14 @@
 import itertools as IT
 import operator
 import random
-from pathlib import Path
+from collections import deque
 from zlib import crc32
 
 import numpy as np
 from followthemoney import compare
 from followthemoney.exc import InvalidData
 
-from .pipeline import pipeline
-from . import const
-from .util import pair_combinations
+from . import settings
 
 N_LINES_READ = 100
 DEBUG = False
@@ -24,7 +22,15 @@ def has_multi_name(entity):
     return len(set(n for n in entity["properties"].get("name", []) if "@" not in n)) > 1
 
 
-def entity_to_samples(entity, field_ban=const.FIELDS_BAN_SET):
+def pair_combinations(sequence):
+    sequence2 = IT.cycle(sequence)
+    next(sequence2)
+    for i in range(len(sequence) - 1):
+        yield from zip(sequence[: -(i + 1)], sequence2)
+        deque(IT.islice(sequence2, i + 2), maxlen=0)
+
+
+def entity_to_samples(entity, field_ban=settings.FIELDS_BAN_SET):
     props = {
         k: vs for k, vs in entity.pop("properties").items() if vs and k not in field_ban
     }
@@ -120,10 +126,6 @@ def create_pairs_profile(data_stream, n_lines_read=None):
     return b
 
 
-def pairs_to_dataframe(bag):
-    return bag.to_dataframe(meta=const.DATAFRAME_META)
-
-
 def pairs_from_group(group, judgement, source, replacement=False, max_pairs=5_000_000):
     from followthemoney import model
 
@@ -158,7 +160,6 @@ def pairs_from_group(group, judgement, source, replacement=False, max_pairs=5_00
                 "judgement": curjudgement,
                 "source": source,
                 "schema": schema.name,
-                "phase": keys_to_phase(left["id"], right["id"]),
             }
         )
     return result
@@ -188,7 +189,7 @@ def create_model_proxy(entity, cache={}):
 
 
 def pairs_calc_ftm_features(
-    pair, feature_idxs=const.FEATURE_IDXS, fields_ban=const.FIELDS_BAN_SET
+    pair, feature_idxs=settings.FEATURE_IDXS, fields_ban=settings.FIELDS_BAN_SET
 ):
     from followthemoney import model
 
@@ -220,19 +221,22 @@ def pairs_calc_ftm_features(
     return pair
 
 
-def keys_to_phase(key_a, key_b):
+def keys_to_phase(key_a, key_b, phase):
     if key_b > key_a:
-        return keys_to_phase(key_b, key_a)
+        return keys_to_phase(key_b, key_a, phase)
     i = float(crc32(f"{key_a}:{key_b}".encode("utf8")) & 0xFFFFFFFF) / 2 ** 32
-    for phase, c in const.PHASES.items():
+    for phase, c in phase.items():
         i -= c
         if i <= 0:
             return phase
 
 
-def create_full_stream(
-    stream_set, meta=const.DATAFRAME_META, n_lines_read=N_LINES_READ
-):
+def calculate_phase(entity, phases):
+    entity["phase"] = keys_to_phase(entity["left_id"], entity["right_id"], phases)
+    return entity
+
+
+def create_full_stream(workflow, stream_set, n_lines_read=N_LINES_READ, phases=None):
     pairs_profile = create_pairs_profile(stream_set.profile, n_lines_read=n_lines_read)
     pairs_negative = create_pairs_negative(
         stream_set.negative, n_lines_read=n_lines_read
@@ -241,29 +245,8 @@ def create_full_stream(
         stream_set.positive, n_lines_read=n_lines_read
     )
 
-    pairs = pipeline.concat([pairs_profile, pairs_negative, pairs_positive])
+    pairs = workflow.concat([pairs_profile, pairs_negative, pairs_positive])
+
+    if phases:
+        pairs = pairs.map(calculate_phase, phases=phases)
     return pairs
-
-
-if __name__ == "__main__":
-    from .data_sources import DATA_SOURCES
-
-    METHOD = "aleph"
-    parquet_path = (
-        Path(__file__).parent / f"data/pairs.{METHOD}.{N_LINES_READ or 'all'}.parquet"
-    ).relative_to(Path.cwd())
-
-    print("Using method:", METHOD)
-    print("n lines to read:", N_LINES_READ)
-    print("Writing to:", parquet_path)
-
-    pipeline.init()
-    stream_set = DATA_SOURCES[METHOD].get_data_streams(pipeline)
-    pairs = create_full_stream(stream_set, n_lines_read=N_LINES_READ)
-
-    if pipeline.IS_DASK:
-        pairs = create_full_stream(stream_set)
-        df = pairs.to_dataframe(meta=const.DATAFRAME_META)
-        df.to_parquet(parquet_path, schema="infer")
-    else:
-        pairs.to_parquet(parquet_path, meta=const.DATAFRAME_META)
