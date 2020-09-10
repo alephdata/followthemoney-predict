@@ -17,8 +17,8 @@ def cli(ctx):
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format=fmt)
 
 
-@cli.group()
-@click.option("--output-file", required=True, type=click.File("w"))
+@cli.group("data")
+@click.option("--output-file", required=True, type=click.File("wb"))
 @click.option(
     "--data-source",
     default="aleph",
@@ -44,7 +44,7 @@ def cli(ctx):
 @click.option("--dask-nworkers", default=1)
 @click.option("--dask-threads-per-worker", default=8)
 @click.pass_context
-def data(
+def data_cli(
     ctx,
     output_file,
     data_source,
@@ -59,9 +59,10 @@ def data(
     ctx.obj["data_source_name"] = data_source
     ctx.obj["phases"] = {"train": train_frac, "test": 1 - train_frac}
 
-    ctx.obj["data_source"] = data_sources.DATA_SOURCES[data_source]
     ctx.obj["line_read_limit"] = line_read_limit
     ctx.obj["cache_dir"] = cache_dir
+    ctx.obj["data_source_type"] = data_source
+    ctx.obj["data_source"] = data_sources.DATA_SOURCES[data_source](**ctx.obj)
 
     ctx.obj["workflow_type"] = workflow_type
     ctx.obj["dask_client_kwargs"] = {
@@ -73,7 +74,18 @@ def data(
     )
 
 
+@cli.group("model")
+@click.option("--output-file", required=True, type=click.File("wb"))
+@click.option("--data-file", required=True, type=click.File("rb"))
+@click.pass_context
+def model_cli(ctx, output_file, data_file):
+    ctx.obj["output_file"] = output_file
+    ctx.obj["data_file"] = data_file
+
+
 if __name__ == "__main__":
-    for pipeline_cli in pipelines.CLI:
-        data.add_command(pipeline_cli)
+    for data_pipeline in pipelines.DATA_PIPELINES:
+        data_cli.add_command(data_pipeline)
+    for model_pipeline in pipelines.MODEL_PIPELINES:
+        model_cli.add_command(model_pipeline)
     cli()

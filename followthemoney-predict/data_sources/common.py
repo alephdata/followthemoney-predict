@@ -8,12 +8,17 @@ import orjson
 from alephclient.api import AlephException
 
 
-COLLECTION_CACHE_DIR = (
-    Path(__file__).parent / Path("../data/collection_cache/")
-).relative_to(Path.cwd())
-ENTITYSET_CACHE_DIR = (
-    Path(__file__).parent / Path("../data/entityset_cache/")
-).relative_to(Path.cwd())
+class DataSource:
+    def __init__(self, **settings):
+        self.settings = settings
+
+    @staticmethod
+    def _entityset_cache(cache_dir):
+        return Path(cache_dir) / "entityset_cache/"
+
+    @staticmethod
+    def _collection_cache(cache_dir):
+        return Path(cache_dir) / "collection_cache/"
 
 
 @contextmanager
@@ -24,15 +29,17 @@ def open_tmpwriter(filename, *args, suffix=".tmp", open=open, **kwargs):
     filename_tmp.rename(filename)
 
 
-def cache_entityset(fxn):
+def cache_entityset(fxn, cache_dir):
     return cache_with_meta(
-        cache_dir=ENTITYSET_CACHE_DIR, key_fxn=lambda meta: meta["id"]
+        cache_dir=DataSource._entityset_cache(cache_dir),
+        key_fxn=lambda meta: meta["id"],
     )(fxn)
 
 
-def cache_collection(fxn):
+def cache_collection(fxn, cache_dir):
     return cache_with_meta(
-        cache_dir=COLLECTION_CACHE_DIR, key_fxn=lambda meta: meta["foreign_id"]
+        cache_dir=DataSource._collection_cache(cache_dir),
+        key_fxn=lambda meta: meta["foreign_id"],
     )(fxn)
 
 

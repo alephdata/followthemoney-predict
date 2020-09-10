@@ -1,3 +1,4 @@
 from . import xref
 
-CLI = [xref.cli]
+DATA_PIPELINES = [xref.cli.data_cli]
+MODEL_PIPELINES = [xref.cli.xref_models]

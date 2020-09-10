@@ -1,4 +1,4 @@
-from pandas import BooleanDtype, CategoricalDtype, StringDtype
+from pandas import CategoricalDtype, StringDtype
 from . import settings
 
 
@@ -28,7 +28,7 @@ def create_schema(phases):
         for which in ("left", "right")
         for c, t in dataframe_fields_types.items()
     }
-    dataframe_meta["judgement"] = BooleanDtype()
+    dataframe_meta["judgement"] = bool()
     dataframe_meta["source"] = CategoricalDtype(["profile", "negative", "positive"])
     dataframe_meta["phase"] = CategoricalDtype(phases.keys())
     dataframe_meta["features"] = object
