@@ -26,6 +26,8 @@ def cli(ctx, debug):
     default="aleph",
     type=click.Choice(data_sources.DATA_SOURCES.keys()),
 )
+@click.option("--aleph-api-key", type=str)
+@click.option("--aleph-host", type=str)
 @click.option("--train-frac", default=0.8, type=click.FloatRange(0, 1))
 @click.option(
     "--line-read-limit",
@@ -50,6 +52,8 @@ def data_cli(
     ctx,
     output_file,
     data_source,
+    aleph_host,
+    aleph_api_key,
     train_frac,
     cache_dir,
     line_read_limit,
@@ -64,6 +68,10 @@ def data_cli(
     ctx.obj["line_read_limit"] = line_read_limit
     ctx.obj["cache_dir"] = cache_dir
     ctx.obj["data_source_type"] = data_source
+    ctx.obj["aleph_params"] = {
+        "host": aleph_host,
+        "api_key": aleph_api_key,
+    }
     ctx.obj["data_source"] = data_sources.DATA_SOURCES[data_source](**ctx.obj)
 
     ctx.obj["workflow_type"] = workflow_type
@@ -95,6 +103,8 @@ def model_cli(ctx, output_file, data_file):
     default="aleph",
     type=click.Choice(data_sources.DATA_SOURCES.keys()),
 )
+@click.option("--aleph-api-key", type=str)
+@click.option("--aleph-host", type=str)
 @click.option(
     "--workflow",
     "workflow_type",
@@ -110,6 +120,8 @@ def predict_cli(
     model_file,
     cache_dir,
     data_source,
+    aleph_api_key,
+    aleph_host,
     workflow_type,
     dask_nworkers,
     dask_threads_per_worker,
@@ -118,6 +130,10 @@ def predict_cli(
 
     ctx.obj["cache_dir"] = cache_dir
     ctx.obj["data_source_name"] = data_source
+    ctx.obj["aleph_params"] = {
+        "host": aleph_host,
+        "api_key": aleph_api_key,
+    }
     ctx.obj["data_source"] = data_sources.DATA_SOURCES[data_source](**ctx.obj)
 
     ctx.obj["workflow_type"] = workflow_type
