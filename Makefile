@@ -1,6 +1,11 @@
 VOLUMES=-v ${PWD}/data:/data -v ${PWD}/cache:/cache -v ${PWD}/models:/models
 FOllOWTHEMONEY_PREDICT=docker run ${VOLUMES} followthemoney-predict:latest
 
+.PHONY: shell predict
+
+build:
+	docker build -t followthemoney-predict:latest .
+
 shell:
 	docker run -it ${VOLUMES} --entrypoint /bin/bash followthemoney-predict:latest
 
