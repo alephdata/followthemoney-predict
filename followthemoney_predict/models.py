@@ -1,11 +1,11 @@
 import numpy as np
-import xgboost as xgb
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.pipeline import make_pipeline
 
 import util
+import xgboost as xgb
 
 
 def class_weights(targets):

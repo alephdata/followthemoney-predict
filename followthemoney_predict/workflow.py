@@ -1,8 +1,7 @@
-import warnings
 import os
+import warnings
 
 from .util import unify_map
-
 
 WORKFLOWS = ["native", "dask"]
 

@@ -1,5 +1,5 @@
-from pathlib import Path
 import gzip
+from pathlib import Path
 
 import orjson
 
@@ -35,7 +35,7 @@ class DiskSource(DataSource):
         for metafile in self.entityset_cache.glob("*_meta.json"):
             with open(metafile) as fd:
                 meta = orjson.loads(fd.read())
-            if meta["type"] in set_types:
+            if set_types is None or meta["type"] in set_types:
                 yield meta
 
     def get_all_collections(self):

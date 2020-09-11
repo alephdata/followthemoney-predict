@@ -3,18 +3,20 @@ import sys
 
 import click
 
-from . import data_sources
-from . import workflow
-from . import pipelines
+from . import data_sources, pipelines, workflow
 
 
 @click.group(help="Utility for FollowTheMoney Predict")
+@click.option("--debug", default=False, is_flag=True)
 @click.pass_context
-def cli(ctx):
+def cli(ctx, debug):
     if ctx.obj is None:
         ctx.obj = {}
     fmt = "%(name)s [%(levelname)s] %(message)s"
-    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format=fmt)
+    level = logging.INFO
+    if debug:
+        level = logging.DEBUG
+    logging.basicConfig(stream=sys.stderr, level=level, format=fmt)
 
 
 @cli.group("data")
@@ -83,9 +85,56 @@ def model_cli(ctx, output_file, data_file):
     ctx.obj["data_file"] = data_file
 
 
+@cli.group("predict")
+@click.option("--model-file", required=True, type=click.File("rb"))
+@click.option(
+    "--cache-dir", envvar="FTM_PREDICT_CACHE_DIR", default="/tmp/ftm-predict/"
+)
+@click.option(
+    "--data-source",
+    default="aleph",
+    type=click.Choice(data_sources.DATA_SOURCES.keys()),
+)
+@click.option(
+    "--workflow",
+    "workflow_type",
+    envvar="FTM_PREDICT_WORKFLOW",
+    type=click.Choice(workflow.WORKFLOWS),
+    default=workflow.WORKFLOWS[0],
+)
+@click.option("--dask-nworkers", default=1)
+@click.option("--dask-threads-per-worker", default=8)
+@click.pass_context
+def predict_cli(
+    ctx,
+    model_file,
+    cache_dir,
+    data_source,
+    workflow_type,
+    dask_nworkers,
+    dask_threads_per_worker,
+):
+    ctx.obj["model_file"] = model_file
+
+    ctx.obj["cache_dir"] = cache_dir
+    ctx.obj["data_source_name"] = data_source
+    ctx.obj["data_source"] = data_sources.DATA_SOURCES[data_source](**ctx.obj)
+
+    ctx.obj["workflow_type"] = workflow_type
+    ctx.obj["dask_client_kwargs"] = {
+        "n_workers": dask_nworkers,
+        "threads_per_worker": dask_threads_per_worker,
+    }
+    ctx.obj["workflow"] = workflow.create_workflow(
+        ctx.obj["workflow_type"], ctx.obj["cache_dir"], ctx.obj["dask_client_kwargs"]
+    )
+
+
 if __name__ == "__main__":
-    for data_pipeline in pipelines.DATA_PIPELINES:
-        data_cli.add_command(data_pipeline)
-    for model_pipeline in pipelines.MODEL_PIPELINES:
-        model_cli.add_command(model_pipeline)
+    for c in pipelines.DATA_CLI:
+        data_cli.add_command(c)
+    for c in pipelines.MODEL_CLI:
+        model_cli.add_command(c)
+    for c in pipelines.PREDICT_CLI:
+        predict_cli.add_command(c)
     cli()

@@ -3,7 +3,7 @@ import itertools as IT
 from alephclient.api import AlephAPI
 from tqdm import tqdm
 
-from .common import DataSource, cache_entityset, cache_collection, retry_aleph_exception
+from .common import DataSource, cache_collection, cache_entityset, retry_aleph_exception
 
 ALEPH_PARAMS = {"retries": 10}
 
@@ -21,7 +21,7 @@ class AlephSource(DataSource):
         self.cache_dir = cache_dir
         super().__init__(**settings)
 
-        self.get_entities = cache_entityset(self.get_entities, self.cache_dir)
+        self.get_entities = cache_collection(self.get_entities, self.cache_dir)
         self.get_entityset_items = cache_entityset(
             self.get_entityset_items, self.cache_dir
         )
@@ -36,11 +36,15 @@ class AlephSource(DataSource):
         yield from setitems
 
     @retry_aleph_exception
-    def get_entities(self, collection, schema):
+    def get_entities(self, collection, schema=None):
         api = self._aleph_api()
         entities = api.stream_entities(collection, schema=schema, publisher=True)
         entities = IT.islice(entities, self.max_entities_per_collection)
         yield from entities
+
+    def get_entity(self, entity_id):
+        api = self._aleph_api()
+        return api.get_entity(entity_id, publisher=True)
 
     def get_entitysets(self, set_types=None):
         api = self._aleph_api()

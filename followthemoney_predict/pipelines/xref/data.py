@@ -1,4 +1,5 @@
 from collections import namedtuple
+
 from . import settings
 
 StreamSet = namedtuple("StreamSet", "profile negative positive".split(" "))

@@ -1,16 +1,22 @@
-import time
-from pathlib import Path
-from datetime import datetime
-from contextlib import contextmanager
 import gzip
+import logging
+import time
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
+
+from alephclient.api import AlephException
 
 import orjson
-from alephclient.api import AlephException
 
 
 class DataSource:
     def __init__(self, **settings):
         self.settings = settings
+
+    def get_collection_entities_by_foreign_id(self, foreign_id, schema=None):
+        collection = self.get_collection_by_foreign_id(foreign_id)
+        yield from self.get_entities(collection, schema)
 
     @staticmethod
     def _entityset_cache(cache_dir):
@@ -61,6 +67,7 @@ def cache_with_meta(cache_dir, key_fxn=None):
                 cache_update_at = datetime.fromisoformat(meta_disk["updated_at"])
                 meta_update_at = datetime.fromisoformat(meta["updated_at"])
                 if cache_data.exists() and meta_update_at >= cache_update_at:
+                    logging.debug(f"Getting cached entries for {cache_data}")
                     with gzip.open(cache_data) as fd:
                         # fd = tqdm(fd, desc=f"Reading from cache: {key}", leave=False)
                         for line in fd:
@@ -68,6 +75,7 @@ def cache_with_meta(cache_dir, key_fxn=None):
                     return
             cache_meta.parent.mkdir(parents=True, exist_ok=True)
             cache_data.parent.mkdir(parents=True, exist_ok=True)
+            logging.debug(f"Creating cached entries for {cache_data}")
             with open_tmpwriter(cache_meta, "wb+") as fd:
                 fd.write(orjson.dumps(meta))
                 with open_tmpwriter(cache_data, "wb+", open=gzip.open) as fd:
@@ -96,7 +104,9 @@ def retry_aleph_exception(fxn):
             except AlephException as e:
                 n_skip = n_items
                 n_tries += 1
-                print(f"Aleph Exception... trying again: Attempt {n_tries}: {e}")
+                logging.exception(
+                    f"Aleph Exception... trying again: Attempt {n_tries}: {e}"
+                )
                 time.sleep(min(2 ** n_tries, 60))
 
     return _

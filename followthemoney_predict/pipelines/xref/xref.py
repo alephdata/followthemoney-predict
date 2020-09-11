@@ -5,6 +5,8 @@ from collections import deque
 from zlib import crc32
 
 import numpy as np
+from banal import ensure_list
+
 from followthemoney import compare
 from followthemoney.exc import InvalidData
 
@@ -56,6 +58,17 @@ def normalize_profile(item):
         "collection_id": item["collection"]["collection_id"],
         **entity,
     }
+
+
+def create_dataframe_from_entities(data_stream, meta=None):
+    data_stream = (
+        data_stream.map(make_pair, judgement=None, source="predict")
+        .filter(None)
+        .map(pairs_calc_ftm_features)
+        .map(pairs_to_flat)
+    )
+    df = data_stream.to_dataframe(meta=meta)
+    return df
 
 
 def create_pairs_positive(data_stream, n_lines_read=None):
@@ -127,8 +140,6 @@ def create_pairs_profile(data_stream, n_lines_read=None):
 
 
 def pairs_from_group(group, judgement, source, replacement=False, max_pairs=5_000_000):
-    from followthemoney import model
-
     N = len(group)
     if N < 2:
         return []
@@ -147,22 +158,29 @@ def pairs_from_group(group, judgement, source, replacement=False, max_pairs=5_00
             break
         left, right = group[i], group[j]
         curjudgement = judgement(left, right)
-        if curjudgement is False and left["id"] == right["id"]:
-            continue
-        try:
-            schema = model.common_schema(left["schema"], right["schema"])
-        except InvalidData:
-            continue
-        result.append(
-            {
-                "left": left,
-                "right": right,
-                "judgement": curjudgement,
-                "source": source,
-                "schema": schema.name,
-            }
-        )
+        pair = make_pair((left, right), curjudgement, source)
+        if pair is not None:
+            result.append(pair)
     return result
+
+
+def make_pair(pair, judgement, source):
+    from followthemoney import model
+
+    (left, right) = pair
+    if judgement is False and left["id"] == right["id"]:
+        return None
+    try:
+        schema = model.common_schema(left["schema"], right["schema"])
+    except InvalidData:
+        return None
+    return {
+        "left": left,
+        "right": right,
+        "judgement": judgement,
+        "schema": schema.name,
+        "source": source,
+    }
 
 
 def pairs_to_flat(item):
@@ -181,9 +199,9 @@ def create_model_proxy(entity, cache={}):
 
     eid = entity["id"]
     try:
-        return cache[id]
+        return cache[eid]
     except KeyError:
-        properties = {k: [v] for k, v in entity["properties"].items()}
+        properties = {k: ensure_list(v) for k, v in entity["properties"].items()}
         cache[eid] = model.get_proxy({**entity, "properties": properties})
         return cache[eid]
 

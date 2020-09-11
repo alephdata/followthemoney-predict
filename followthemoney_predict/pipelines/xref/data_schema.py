@@ -1,8 +1,9 @@
 from pandas import CategoricalDtype, StringDtype
+
 from . import settings
 
 
-def create_schema(phases):
+def create_schema(phases, sources):
     dataframe_fields_types = {
         "name": StringDtype(),
         "schema": CategoricalDtype(settings.SCHEMAS),
@@ -28,9 +29,9 @@ def create_schema(phases):
         for which in ("left", "right")
         for c, t in dataframe_fields_types.items()
     }
-    dataframe_meta["judgement"] = bool()
-    dataframe_meta["source"] = CategoricalDtype(["profile", "negative", "positive"])
-    dataframe_meta["phase"] = CategoricalDtype(phases.keys())
+    dataframe_meta["judgement"] = bool
+    dataframe_meta["source"] = CategoricalDtype(sources)
+    dataframe_meta["phase"] = CategoricalDtype(phases)
     dataframe_meta["features"] = object
     dataframe_meta["schema"] = StringDtype()
     return dataframe_meta

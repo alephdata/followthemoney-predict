@@ -97,4 +97,3 @@ FEATURE_FTM_COMPARE_WEIGHTS = {
     "nationality": 0.1,
     "passportNumber": 0.3,
 }
-

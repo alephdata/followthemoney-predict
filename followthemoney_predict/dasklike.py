@@ -1,14 +1,16 @@
+import gzip
 import itertools as IT
+import logging
 import os
 import random
 from functools import partial, wraps
 from pathlib import Path
-import gzip
 
 import pandas as pd
+from tqdm import tqdm
+
 import pyarrow as pa
 import pyarrow.parquet as pq
-from tqdm import tqdm
 
 DEFAULT_CHUNK_SIZE = 8_192
 
@@ -109,9 +111,10 @@ class DaskLike:
         return from_sequence(data)
 
     @dasklike_iter
-    def debug_counter(self, desc):
+    def debug_counter(self, desc, every=500):
         for i, item in enumerate(self.stream):
-            print(f"[{desc}] {i}")
+            if (i + 1) % every == 0:
+                print(f"[{desc}] {i}")
             yield item
 
     @dasklike_iter
@@ -135,6 +138,8 @@ class DaskLike:
             df = df.astype(meta)
         for chunk in chunk_stream(stream, chunk_size=partition_size):
             df_chunk = pd.DataFrame(chunk, columns=columns)
+            if meta:
+                df_chunk = df_chunk.astype(meta)
             df = df.append(df_chunk, ignore_index=True)
         return df
 
