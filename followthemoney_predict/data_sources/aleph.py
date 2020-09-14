@@ -37,6 +37,8 @@ class AlephSource(DataSource):
 
     @retry_aleph_exception
     def get_entities(self, collection, schema=None):
+        if collection.get("restricted"):
+            return
         api = self._aleph_api()
         entities = api.stream_entities(collection, schema=schema, publisher=True)
         entities = IT.islice(entities, self.max_entities_per_collection)
