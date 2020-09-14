@@ -6,6 +6,7 @@ followthemoney
 banal
 tqdm
 orjson
+gcsfs
 
 numpy
 xgboost

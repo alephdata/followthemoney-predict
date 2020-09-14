@@ -122,6 +122,7 @@ def xarray(X):
 
 
 def fit_xgboost(df):
+    logging.debug(f"Training xgboost model on dataframe with shape: {df.shape}")
     WEIGHTS = {"negative": 0.1, "positive": 0.1, "profile": 10}
     df["weight"] = df.source.apply(WEIGHTS.__getitem__)
     phases = get_phases(df)
@@ -144,6 +145,7 @@ def fit_xgboost(df):
 
 
 def fit_linear(df):
+    logging.debug(f"Training linear model on dataframe with shape: {df.shape}")
     WEIGHTS = {"negative": 0.1, "positive": 0.1, "profile": 10}
     df["weight"] = df.source.apply(WEIGHTS.__getitem__)
     phases = get_phases(df)

@@ -4,10 +4,11 @@ import sys
 import click
 
 from . import data_sources, pipelines, workflow
+from .util import FileAnyType
 
 
 @click.group(help="Utility for FollowTheMoney Predict")
-@click.option("--debug", default=False, is_flag=True)
+@click.option("--debug", default=False, is_flag=True, envvar="DEBUG")
 @click.pass_context
 def cli(ctx, debug):
     if ctx.obj is None:
@@ -17,10 +18,11 @@ def cli(ctx, debug):
     if debug:
         level = logging.DEBUG
     logging.basicConfig(stream=sys.stderr, level=level, format=fmt)
+    logging.debug("Debug Mode")
 
 
 @cli.group("data")
-@click.option("--output-file", required=True, type=click.File("wb"))
+@click.option("--output-file", required=True, type=FileAnyType("wb"))
 @click.option(
     "--data-source",
     default="aleph",
@@ -85,8 +87,8 @@ def data_cli(
 
 
 @cli.group("model")
-@click.option("--output-file", required=True, type=click.File("wb"))
-@click.option("--data-file", required=True, type=click.File("rb"))
+@click.option("--output-file", required=True, type=FileAnyType("wb"))
+@click.option("--data-file", required=True, type=FileAnyType("rb"))
 @click.pass_context
 def model_cli(ctx, output_file, data_file):
     ctx.obj["output_file"] = output_file
@@ -94,7 +96,7 @@ def model_cli(ctx, output_file, data_file):
 
 
 @cli.group("predict")
-@click.option("--model-file", required=True, type=click.File("rb"))
+@click.option("--model-file", required=True, type=FileAnyType("rb"))
 @click.option(
     "--cache-dir", envvar="FTM_PREDICT_CACHE_DIR", default="/tmp/ftm-predict/"
 )
@@ -103,8 +105,8 @@ def model_cli(ctx, output_file, data_file):
     default="aleph",
     type=click.Choice(data_sources.DATA_SOURCES.keys()),
 )
-@click.option("--aleph-api-key", type=str)
-@click.option("--aleph-host", type=str)
+@click.option("--aleph-api-key", type=str, envvar="ALEPHCLIENT_API_KEY")
+@click.option("--aleph-host", type=str, envvar="ALEPHCLIENT_HOST")
 @click.option(
     "--workflow",
     "workflow_type",

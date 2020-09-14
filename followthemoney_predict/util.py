@@ -1,13 +1,48 @@
+import logging
 import itertools as IT
 import json
 from types import GeneratorType
+import os
 
+import click
+import gcsfs
 import numpy as np
 from sklearn.metrics import confusion_matrix
 
 
 class DefaultNone(object):
     pass
+
+
+class FileAnyType(click.File):
+    def _ensure_call(self, fxn, ctx):
+        if ctx is not None:
+            ctx.call_on_close(click.utils.safecall(fxn))
+
+    def convert(self, value, param, ctx):
+        is_bytes = isinstance(value, bytes)
+        if not is_bytes and not isinstance(value, str):
+            return super().convert(value, param, ctx)
+        if is_bytes:
+            value = value.decode("utf8")
+
+        if value.startswith("gcs://") or value.startswith("gc://"):
+            token = os.environ.get("FTM_PREDICT_GCS_TOKEN")
+
+            logging.debug(f"Using GCSFS to open file: {value}")
+            logging.debug(f"Using GCSFS token: {token}")
+            fs = gcsfs.GCSFileSystem(token=token)
+            try:
+                fd = fs.open(value, mode=self.mode)
+            except gcsfs.core.HttpError as e:
+                return self.fail(
+                    f"Could not open GCS file: {value}: {e}",
+                    param,
+                    ctx,
+                )
+            self._ensure_call(fd.close, ctx)
+            return super().convert(fd, param, ctx)
+        return super().convert(value, param, ctx)
 
 
 def unify_map(fxn, workflow):
