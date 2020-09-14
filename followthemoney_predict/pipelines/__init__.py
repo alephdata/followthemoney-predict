@@ -2,4 +2,4 @@ from . import xref
 
 DATA_CLI = [xref.cli.data_cli]
 MODEL_CLI = [xref.cli.xref_models]
-PREDICT_CLI = [xref.cli.predict_cli]
+EVAULATE_CLI = [xref.cli.evaluate_cli]

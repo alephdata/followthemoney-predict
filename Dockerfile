@@ -10,5 +10,6 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+RUN pip install -e .
 
-ENTRYPOINT ["python", "-m", "followthemoney_predict.cli"]
+ENTRYPOINT ["followthemoney-predict"]

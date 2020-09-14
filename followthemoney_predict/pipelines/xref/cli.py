@@ -88,13 +88,13 @@ def linear_cli(ctx):
 )
 @click.option("--summary", "-s", is_flag=True, default=False)
 @click.pass_context
-def predict_cli(ctx, entity_ids, collection_fids, summary):
+def evaluate_cli(ctx, entity_ids, collection_fids, summary):
     model = pickle.load(ctx.obj["model_file"])
-    logging.info(f"Predicting using model: {model['meta']}")
+    logging.info(f"Evaluating using model: {model['meta']}")
 
     workflow = ctx.obj["workflow"]
     data_source = ctx.obj["data_source"]
-    schema = data_schema.create_schema(["predict"], ["predict"])
+    schema = data_schema.create_schema(["evaluate"], ["evaluate"])
 
     if entity_ids and not hasattr(data_source, "get_entity"):
         raise click.BadParameter(
@@ -119,7 +119,9 @@ def predict_cli(ctx, entity_ids, collection_fids, summary):
     else:
         pairs = IT.combinations(IT.chain.from_iterable(collections_entities), 2)
 
-    df = create_dataframe_from_entities(workflow.from_sequence(pairs), meta=schema)
+    df = create_dataframe_from_entities(
+        workflow.from_sequence(pairs), meta=schema, source="evaluate"
+    )
     y_predict_proba = model_predict(model["model"], df)
 
     if summary:

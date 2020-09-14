@@ -60,9 +60,9 @@ def normalize_profile(item):
     }
 
 
-def create_dataframe_from_entities(data_stream, meta=None):
+def create_dataframe_from_entities(data_stream, meta=None, source="predict"):
     data_stream = (
-        data_stream.map(make_pair, judgement=None, source="predict")
+        data_stream.map(make_pair, judgement=None, source=source)
         .filter(None)
         .map(pairs_calc_ftm_features)
         .map(pairs_to_flat)

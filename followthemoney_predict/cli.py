@@ -7,7 +7,7 @@ from . import data_sources, pipelines, workflow
 from .util import FileAnyType
 
 
-@click.group(help="Utility for FollowTheMoney Predict")
+@click.group("predict", help="Utility for FollowTheMoney Predict")
 @click.option("--debug", default=False, is_flag=True, envvar="DEBUG")
 @click.pass_context
 def cli(ctx, debug):
@@ -95,7 +95,7 @@ def model_cli(ctx, output_file, data_file):
     ctx.obj["data_file"] = data_file
 
 
-@cli.group("predict")
+@cli.group("evaluate")
 @click.option("--model-file", required=True, type=FileAnyType("rb"))
 @click.option(
     "--cache-dir", envvar="FTM_PREDICT_CACHE_DIR", default="/tmp/ftm-predict/"
@@ -117,7 +117,7 @@ def model_cli(ctx, output_file, data_file):
 @click.option("--dask-nworkers", default=1)
 @click.option("--dask-threads-per-worker", default=8)
 @click.pass_context
-def predict_cli(
+def evaluate_cli(
     ctx,
     model_file,
     cache_dir,
@@ -148,11 +148,15 @@ def predict_cli(
     )
 
 
-if __name__ == "__main__":
+def main():
     for c in pipelines.DATA_CLI:
         data_cli.add_command(c)
     for c in pipelines.MODEL_CLI:
         model_cli.add_command(c)
-    for c in pipelines.PREDICT_CLI:
-        predict_cli.add_command(c)
+    for c in pipelines.EVAULATE_CLI:
+        evaluate_cli.add_command(c)
     cli()
+
+
+if __name__ == "__main__":
+    main()
