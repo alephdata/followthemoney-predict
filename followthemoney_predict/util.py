@@ -27,13 +27,8 @@ class FileAnyType(click.File):
             value = value.decode("utf8")
 
         if value.startswith("gcs://") or value.startswith("gc://"):
-            token = os.environ.get("FTM_PREDICT_GCS_TOKEN")
-
-            logging.debug(f"Using GCSFS to open file: {value}")
-            logging.debug(f"Using GCSFS token: {token}")
-            fs = gcsfs.GCSFileSystem(token=token)
             try:
-                fd = fs.open(value, mode=self.mode)
+                fd = gcs_open(value, self.mode)
             except gcsfs.core.HttpError as e:
                 return self.fail(
                     f"Could not open GCS file: {value}: {e}",
@@ -43,6 +38,14 @@ class FileAnyType(click.File):
             self._ensure_call(fd.close, ctx)
             return super().convert(fd, param, ctx)
         return super().convert(value, param, ctx)
+
+
+def gcs_open(filename, mode):
+    token = os.environ.get("FTM_PREDICT_GCS_TOKEN")
+    logging.debug(f"Using GCSFS to open file: {filename}")
+    logging.debug(f"Using GCSFS token: {token}")
+    fs = gcsfs.GCSFileSystem(token=token)
+    return fs.open(filename, mode=mode)
 
 
 def unify_map(fxn, workflow):

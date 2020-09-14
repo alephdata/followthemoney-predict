@@ -6,14 +6,9 @@ import click
 import pandas as pd
 
 from . import data, data_schema, settings
-from .models import (
-    describe_model_predictions,
-    fit_linear,
-    fit_xgboost,
-    format_prediction,
-    model_predict,
-)
-from .xref import create_dataframe_from_entities, create_full_stream
+from .models import XrefBaseModel, XrefLinear, XrefXGBoost
+from .models.util import format_prediction
+from .pipeline import create_dataframe_from_entities, create_full_stream
 
 
 @click.command("xref")
@@ -50,35 +45,15 @@ def xref_models(ctx):
 @xref_models.command("xgboost")
 @click.pass_context
 def xgboost_cli(ctx):
-    df = pd.read_parquet(ctx.obj["data_file"]).reset_index(drop=True)
-    clf, scores = fit_xgboost(df)
-    model_spec = {
-        "meta": {
-            "type": "xgboost",
-            "version": 0.1,
-            "training_data": ctx.obj["data_file"].name,
-            "scores": scores,
-        },
-        "model": clf,
-    }
-    pickle.dump(model_spec, ctx.obj["output_file"])
+    model = XrefXGBoost().fit_parquet(ctx.obj["data_file"])
+    ctx.obj["output_file"].write(model.dumps())
 
 
 @xref_models.command("linear")
 @click.pass_context
 def linear_cli(ctx):
-    df = pd.read_parquet(ctx.obj["data_file"]).reset_index(drop=True)
-    clf, scores = fit_linear(df)
-    model_spec = {
-        "meta": {
-            "type": "linear",
-            "version": 0.1,
-            "training_data": ctx.obj["data_file"].name,
-            "scores": scores,
-        },
-        "model": clf,
-    }
-    pickle.dump(model_spec, ctx.obj["output_file"])
+    model = XrefLinear().fit_parquet(ctx.obj["data_file"])
+    ctx.obj["output_file"].write(model.dumps())
 
 
 @click.command("xref")
@@ -89,8 +64,8 @@ def linear_cli(ctx):
 @click.option("--summary", "-s", is_flag=True, default=False)
 @click.pass_context
 def evaluate_cli(ctx, entity_ids, collection_fids, summary):
-    model = pickle.load(ctx.obj["model_file"])
-    logging.info(f"Evaluating using model: {model['meta']}")
+    model = XrefBaseModel.loads(ctx.obj["model_file"].read())
+    logging.info(f"Evaluating using model: {model}")
 
     workflow = ctx.obj["workflow"]
     data_source = ctx.obj["data_source"]
@@ -122,10 +97,10 @@ def evaluate_cli(ctx, entity_ids, collection_fids, summary):
     df = create_dataframe_from_entities(
         workflow.from_sequence(pairs), meta=schema, source="evaluate"
     )
-    y_predict_proba = model_predict(model["model"], df)
+    y_predict_proba = model.predict(df)
 
     if summary:
-        describe_model_predictions(df, y_predict_proba)
+        model.describe_predictions(df, y_predict_proba)
     else:
         for (idx, sample), prediction in zip(df.iterrows(), y_predict_proba):
             print(format_prediction(sample, prediction))

@@ -12,6 +12,8 @@ from followthemoney.exc import InvalidData
 
 from . import settings
 
+
+PROXY_CACHE_SIZE = 1_000_000
 N_LINES_READ = 100
 DEBUG = False
 
@@ -202,21 +204,35 @@ def create_model_proxy(entity, cache={}):
         return cache[eid]
     except KeyError:
         properties = {k: ensure_list(v) for k, v in entity["properties"].items()}
-        cache[eid] = model.get_proxy({**entity, "properties": properties})
-        return cache[eid]
+        c = cache[eid] = model.get_proxy({**entity, "properties": properties})
+        if len(cache) > PROXY_CACHE_SIZE:
+            N = len(cache) - PROXY_CACHE_SIZE
+            keys = IT.islice(cache.keys(), N)
+            for k in keys:
+                cache.pop(k)
+        return c
 
 
 def pairs_calc_ftm_features(
     pair, feature_idxs=settings.FEATURE_IDXS, fields_ban=settings.FIELDS_BAN_SET
 ):
-    from followthemoney import model
-
     A = create_model_proxy(pair["left"])
     B = create_model_proxy(pair["right"])
+    pair["features"] = ftm_features_from_proxy(
+        A, B, pair["schema"], feature_idxs, fields_ban
+    )
+    return pair
+
+
+def ftm_features_from_proxy(
+    A, B, schema, feature_idxs=settings.FEATURE_IDXS, fields_ban=settings.FIELDS_BAN_SET
+):
+    from followthemoney import model
+
     features = np.zeros(len(feature_idxs))
     features[feature_idxs["name"]] = compare.compare_names(A, B)
     features[feature_idxs["country"]] = compare.compare_countries(A, B)
-    schema = model.schemata[pair["schema"]]
+    schema = model.schemata[schema]
     for name, prop in schema.properties.items():
         if name in fields_ban:
             continue
@@ -235,8 +251,7 @@ def pairs_calc_ftm_features(
         prop_score = prop.type.compare_sets(A_values, B_values)
         feature_idx = feature_idxs[prop.name]
         features[feature_idx] = prop_score
-    pair["features"] = features
-    return pair
+    return features
 
 
 def keys_to_phase(key_a, key_b, phase):
