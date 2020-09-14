@@ -3,6 +3,10 @@ FOllOWTHEMONEY_PREDICT=docker run ${VOLUMES} followthemoney-predict:latest
 
 .PHONY: shell predict
 
+publish:
+	python setup.py sdist bdist_wheel
+	python3 -m twine upload dist/*
+
 build:
 	docker build -t followthemoney-predict:latest .
 
