@@ -9,15 +9,18 @@ from .util import FileAnyType
 
 @click.group("predict", help="Utility for FollowTheMoney Predict")
 @click.option("--debug", default=False, is_flag=True, envvar="DEBUG")
+@click.option("--log", default="-", type=FileAnyType("w"))
 @click.pass_context
-def cli(ctx, debug):
+def cli(ctx, debug, log):
     if ctx.obj is None:
         ctx.obj = {}
     fmt = "%(name)s [%(levelname)s] %(message)s"
     level = logging.INFO
     if debug:
         level = logging.DEBUG
-    logging.basicConfig(stream=sys.stderr, level=level, format=fmt)
+    logging.basicConfig(stream=log, level=level, format=fmt)
+    sys.stdout = log
+    sys.stderr = log
     logging.debug("Debug Mode")
 
 
