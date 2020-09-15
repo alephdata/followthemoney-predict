@@ -7,10 +7,9 @@ from functools import partial, wraps
 from pathlib import Path
 
 import pandas as pd
-from tqdm import tqdm
-
 import pyarrow as pa
 import pyarrow.parquet as pq
+from tqdm import tqdm
 
 DEFAULT_CHUNK_SIZE = 8_192
 

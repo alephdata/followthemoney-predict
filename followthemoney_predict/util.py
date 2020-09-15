@@ -1,8 +1,9 @@
-import logging
+import gzip
 import itertools as IT
 import json
-from types import GeneratorType
+import logging
 import os
+from types import GeneratorType
 
 import click
 import gcsfs
@@ -26,26 +27,35 @@ class FileAnyType(click.File):
         if is_bytes:
             value = value.decode("utf8")
 
-        if value.startswith("gcs://") or value.startswith("gc://"):
-            try:
-                fd = gcs_open(value, self.mode)
-            except gcsfs.core.HttpError as e:
-                return self.fail(
-                    f"Could not open GCS file: {value}: {e}",
-                    param,
-                    ctx,
-                )
+        try:
+            fd = multi_open(value, self.mode, use_file=False)
             self._ensure_call(fd.close, ctx)
             return super().convert(fd, param, ctx)
+        except gcsfs.core.HttpError as e:
+            return self.fail(
+                f"Could not open GCS file: {value}: {e}",
+                param,
+                ctx,
+            )
+        except ValueError:
+            pass
         return super().convert(value, param, ctx)
 
 
-def gcs_open(filename, mode):
-    token = os.environ.get("FTM_PREDICT_GCS_TOKEN")
-    logging.debug(f"Using GCSFS to open file: {filename}")
-    logging.debug(f"Using GCSFS token: {token}")
-    fs = gcsfs.GCSFileSystem(token=token)
-    return fs.open(filename, mode=mode)
+def multi_open(
+    filename, mode, use_gcs=True, use_file=True, use_gzip=True, token=None, **kwargs
+):
+    if use_gcs and (filename.startswith("gcs://") or filename.startswith("gc://")):
+        token = token or os.environ.get("FTM_PREDICT_GCS_TOKEN")
+        logging.debug(f"Using GCSFS to open file: {filename}:{mode}")
+        fs = gcsfs.GCSFileSystem(token=token)
+        return fs.open(filename, mode=mode, **kwargs)
+    elif use_gzip and (filename.endswith(".gz") or filename.endswith(".gzip")):
+        logging.debug(f"Using GZIP to open file: {filename}:{mode}")
+        return gzip.open(filename, mode, **kwargs)
+    elif use_file:
+        return open(filename, mode, **kwargs)
+    raise ValueError(f"Unable to open file: {filename}:{mode}")
 
 
 def unify_map(fxn, workflow):

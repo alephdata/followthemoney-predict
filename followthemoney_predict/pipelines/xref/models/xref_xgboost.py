@@ -2,8 +2,8 @@ import logging
 
 import xgboost as xgb
 
-from .xref_ftm_model import XrefFTMModel
 from .util import xarray
+from .xref_ftm_model import XrefFTMModel
 
 
 class XrefXGBoost(XrefFTMModel):

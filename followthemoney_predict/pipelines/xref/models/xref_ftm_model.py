@@ -2,14 +2,13 @@ import logging
 
 import numpy as np
 import pandas as pd
-from followthemoney import model as ftm_model
 
-from .xref_base_model import XrefBaseModel
-from .util import get_phases, xarray
 from ..pipeline import ftm_features_from_proxy
+from .util import get_phases, xarray
+from .xref_model import XrefModel
 
 
-class XrefFTMModel(XrefBaseModel):
+class XrefFTMModel(XrefModel):
     __model_registry = {}
 
     def __init_subclass__(cls):
@@ -33,11 +32,14 @@ class XrefFTMModel(XrefBaseModel):
     def predict(self, df):
         logging.debug(f"Creating prediction on {df.shape[0]} samples")
         X = xarray(df.features)
+        return self.predict_array(X)
+
+    def predict_array(self, X):
         return self.clf.predict_proba(X)
 
-    def compare(self, A, B):
+    def compare(self, ftm_model, A, B):
         """Mimick the followthemoney.compare:compare API"""
         schema = ftm_model.common_schema(A.schema, B.schema)
         features = ftm_features_from_proxy(A, B, schema)
-        prediction = self.predict_proba(features[np.newaxis])
+        prediction = self.predict_array(features[np.newaxis])[0]
         return prediction[1]

@@ -1,12 +1,13 @@
 import pickle
 
-from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 import numpy as np
+from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 
+from followthemoney_predict.util import multi_open
 from .util import format_prediction
 
 
-class XrefBaseModel:
+class XrefModel:
     __model_registry = {}
 
     def __init__(self, *args, **kwargs):
@@ -15,11 +16,15 @@ class XrefBaseModel:
         self.clf = getattr(self, "clf") or None
 
     def __init_subclass__(cls):
-        XrefBaseModel.__model_registry[cls.__name__] = cls
+        XrefModel.__model_registry[cls.__name__] = cls
 
     @staticmethod
     def get_model(name):
-        return XrefBaseModel.__model_registry[name]
+        return XrefModel.__model_registry[name]
+
+    def dump(self, filename, token=None, **kwargs):
+        with multi_open(filename, "wb", token=token, **kwargs) as fd:
+            return fd.write(self.dumps())
 
     def dumps(self):
         meta = self.meta or {}
@@ -34,11 +39,16 @@ class XrefBaseModel:
             }
         )
 
+    @classmethod
+    def load(cls, filename, token=None, **kwargs):
+        with multi_open(filename, "rb", token=token, **kwargs) as fd:
+            return cls.loads(fd.read())
+
     @staticmethod
     def loads(blob):
         data = pickle.loads(blob)
         version = data["version"]
-        model_cls = XrefBaseModel.get_model(version["type"])
+        model_cls = XrefModel.get_model(version["type"])
         model = model_cls.__new__(model_cls)
 
         model.clf = data["model"]
@@ -92,6 +102,14 @@ class XrefBaseModel:
         print(" \tN' \t P'")
         print(f"N\t{confusion_profile[0,0]:0.2f}\t{confusion_profile[0, 1]:0.2f}")
         print(f"P\t{confusion_profile[1,0]:0.2f}\t{confusion_profile[1, 1]:0.2f}")
+
+        print("Accuracy per threshold")
+        N = y_predict_proba.shape[0]
+        for t in np.arange(0, 1, 0.05):
+            correct = sum((y_predict_proba[:, 1] > t) == y)
+            print(
+                f"\t[{t:0.3f}] Accuracy: {correct / N * 100:0.2f}% ({correct} correct)"
+            )
 
         self.describe_predictions(df, y_predict_proba)
         return scores

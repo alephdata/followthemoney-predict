@@ -5,9 +5,8 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from alephclient.api import AlephException
-
 import orjson
+from alephclient.api import AlephException
 
 
 class DataSource:

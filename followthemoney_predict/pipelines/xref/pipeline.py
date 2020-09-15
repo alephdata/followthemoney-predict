@@ -6,12 +6,10 @@ from zlib import crc32
 
 import numpy as np
 from banal import ensure_list
-
 from followthemoney import compare
 from followthemoney.exc import InvalidData
 
 from . import settings
-
 
 PROXY_CACHE_SIZE = 1_000_000
 N_LINES_READ = 100

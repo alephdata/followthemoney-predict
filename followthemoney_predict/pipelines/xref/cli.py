@@ -6,7 +6,7 @@ import click
 import pandas as pd
 
 from . import data, data_schema, settings
-from .models import XrefBaseModel, XrefLinear, XrefXGBoost
+from .models import XrefModel, XrefLinear, XrefXGBoost
 from .models.util import format_prediction
 from .pipeline import create_dataframe_from_entities, create_full_stream
 
@@ -64,7 +64,7 @@ def linear_cli(ctx):
 @click.option("--summary", "-s", is_flag=True, default=False)
 @click.pass_context
 def evaluate_cli(ctx, entity_ids, collection_fids, summary):
-    model = XrefBaseModel.loads(ctx.obj["model_file"].read())
+    model = XrefModel.loads(ctx.obj["model_file"].read())
     logging.info(f"Evaluating using model: {model}")
 
     workflow = ctx.obj["workflow"]

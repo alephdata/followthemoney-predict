@@ -2,8 +2,8 @@ import logging
 
 from sklearn.linear_model import LogisticRegression
 
-from .xref_ftm_model import XrefFTMModel
 from .util import xarray
+from .xref_ftm_model import XrefFTMModel
 
 
 class XrefLinear(XrefFTMModel):
