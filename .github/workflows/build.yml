@@ -1,0 +1,49 @@
+name: followthemoney-predict-build
+
+on: [push]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Show ref
+        run: |
+          echo "$GITHUB_REF"
+      - name: Set up Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: "3.x"
+      - name: Build a followthemoney-predict distribution
+        run: |
+          python setup.py sdist bdist_wheel
+      - name: Publish followthemoney to PyPI
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: __token__
+          password: ${{ secrets.pypi_password }}
+          packages_dir: dist/
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Show ref
+        run: |
+          echo "$GITHUB_REF"
+      - name: Build docker image
+        run: |
+          docker build -t alephdata/followthemoney-predict:latest .
+      - name: Push docker image for commit hashes
+        run: |
+          docker login -u ${{ secrets.docker_user }} -p ${{ secrets.docker_password }}
+          docker build -t alephdata/followthemoney-predict:${GITHUB_SHA} .
+          docker push alephdata/followthemoney-predict:${GITHUB_SHA}
+      - name: Push docker image for tags
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        run: |
+          docker login -u ${{ secrets.docker_user }} -p ${{ secrets.docker_password }}
+          docker build -t alephdata/followthemoney-predict:${GITHUB_REF/refs\/tags\//} .
+          docker push alephdata/followthemoney-predict:${GITHUB_REF/refs\/tags\//}
+          docker push alephdata/followthemoney-predict:latest
