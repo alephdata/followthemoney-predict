@@ -23,7 +23,7 @@ jobs:
       - name: Build a followthemoney-predict distribution
         run: |
           python setup.py sdist bdist_wheel
-      - name: Publish followthemoney to PyPI
+      - name: Publish followthemoney-predict to PyPI
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
         uses: pypa/gh-action-pypi-publish@master
         with:
