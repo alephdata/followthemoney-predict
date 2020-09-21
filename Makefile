@@ -3,6 +3,8 @@ FOllOWTHEMONEY_PREDICT=docker run ${VOLUMES} followthemoney-predict:latest
 
 .PHONY: shell predict publish build
 
+all: evaluate
+
 publish: clean
 	python setup.py sdist bdist_wheel
 	python3 -m twine upload dist/*
@@ -32,6 +34,7 @@ models/model.%.pkl: data/xref.aleph.all.parquet
 			--data-file /data/xref.aleph.all.parquet \
 			--output-file /models/model.$*.pkl \
 		xref \
+			--best-of 10 \
 		$*
 
 evaluate: models/model.xgboost.pkl models/model.linear.pkl

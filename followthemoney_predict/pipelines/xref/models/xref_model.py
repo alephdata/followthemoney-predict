@@ -61,6 +61,12 @@ class XrefModel:
         model.revision = version["revision"]
         return model
 
+    def better_than(self, other, metric="roc_auc"):
+        try:
+            return self.meta["scores"]["roc_auc"] > other.meta["scores"]["roc_auc"]
+        except KeyError:
+            raise ValueError("Model not fitted")
+
     def __repr__(self):
         return f"<{self.__class__.__name__}:{self.revision}:{self.version}>"
 
@@ -76,7 +82,7 @@ class XrefModel:
         }
 
         accuracy = accuracy_score(y, y_predict)
-        roc_auc = roc_auc_score(y, y_predict)
+        roc_auc = roc_auc_score(y, y_predict_proba[:, 1])
         confusion = 100 * confusion_matrix(y, y_predict, normalize="true")
         pi = sources_indexes["profile"]
         confusion_profile = 100 * confusion_matrix(

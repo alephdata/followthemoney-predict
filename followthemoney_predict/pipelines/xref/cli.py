@@ -43,25 +43,32 @@ def xref_models(ctx, best_of):
     ctx.obj["best_of"] = best_of
 
 
+def train_model(ctx, model_class):
+    model_best = None
+    best_of = ctx.obj["best_of"]
+    for i in range(best_of):
+        model = model_class()
+        logging.info(f"Training model {i+1} out of {best_of}: {model}")
+        model.fit_parquet(ctx.obj["data_file"])
+        if model_best is not None:
+            logging.info(f"Best Model: {model_best.meta['scores']}")
+        logging.info(f"Current Model: {model.meta['scores']}")
+        if model_best is None or model.better_than(model_best, metric="accuracy"):
+            logging.info("Keeping new model")
+            model_best = model
+    ctx.obj["output_file"].write(model_best.dumps())
+
+
 @xref_models.command("xgboost")
 @click.pass_context
 def xgboost_cli(ctx):
-    model_best = None
-    for i in range(ctx.obj["best_of"]):
-        model = XrefXGBoost().fit_parquet(ctx.obj["data_file"])
-        if (
-            model_best is None
-            or model_best.meta["scores"]["roc_auc"] < model.meta["scores"]["roc_auc"]
-        ):
-            model_best = model
-    ctx.obj["output_file"].write(model_best.dumps())
+    train_model(ctx, XrefXGBoost)
 
 
 @xref_models.command("linear")
 @click.pass_context
 def linear_cli(ctx):
-    model = XrefLinear().fit_parquet(ctx.obj["data_file"])
-    ctx.obj["output_file"].write(model.dumps())
+    train_model(ctx, XrefLinear)
 
 
 @click.command("xref")
