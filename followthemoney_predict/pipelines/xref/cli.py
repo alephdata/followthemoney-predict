@@ -37,16 +37,24 @@ def data_cli(ctx):
 
 
 @click.group("xref")
+@click.option("--best-of", type=int, default=1)
 @click.pass_context
-def xref_models(ctx):
-    pass
+def xref_models(ctx, best_of):
+    ctx.obj["best_of"] = best_of
 
 
 @xref_models.command("xgboost")
 @click.pass_context
 def xgboost_cli(ctx):
-    model = XrefXGBoost().fit_parquet(ctx.obj["data_file"])
-    ctx.obj["output_file"].write(model.dumps())
+    model_best = None
+    for i in range(ctx.obj["best_of"]):
+        model = XrefXGBoost().fit_parquet(ctx.obj["data_file"])
+        if (
+            model_best is None
+            or model_best.meta["scores"]["roc_auc"] < model.meta["scores"]["roc_auc"]
+        ):
+            model_best = model
+    ctx.obj["output_file"].write(model_best.dumps())
 
 
 @xref_models.command("linear")

@@ -3,6 +3,8 @@ click
 alephclient
 followthemoney
 
+gitpython
+
 banal
 tqdm
 orjson

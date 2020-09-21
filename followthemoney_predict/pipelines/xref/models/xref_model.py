@@ -1,5 +1,6 @@
 import pickle
 
+import git
 import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 
@@ -11,6 +12,8 @@ class XrefModel:
     __model_registry = {}
 
     def __init__(self, *args, **kwargs):
+        repo = git.Repo(search_parent_directories=True)
+        self.revision = repo.head.object.hexsha[:8]
         self.version = self.version or None
         self.meta = getattr(self, "meta") or {}
         self.clf = getattr(self, "clf") or None
@@ -33,6 +36,7 @@ class XrefModel:
                 "version": {
                     "type": self.__class__.__name__,
                     "version": self.version,
+                    "revision": self.revision,
                 },
                 "meta": meta,
                 "model": self.clf,
@@ -54,10 +58,11 @@ class XrefModel:
         model.clf = data["model"]
         model.meta = data["meta"]
         model.version = version["version"]
+        model.revision = version["revision"]
         return model
 
     def __repr__(self):
-        return f"<{self.__class__.__name__}:{self.version}>"
+        return f"<{self.__class__.__name__}:{self.revision}:{self.version}>"
 
     def describe(self, df):
         y = df.judgement

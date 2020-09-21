@@ -1,7 +1,7 @@
 VOLUMES=-v ${PWD}/data:/data -v ${PWD}/cache:/cache -v ${PWD}/models:/models
 FOllOWTHEMONEY_PREDICT=docker run ${VOLUMES} followthemoney-predict:latest
 
-.PHONY: shell predict publish
+.PHONY: shell predict publish build
 
 publish: clean
 	python setup.py sdist bdist_wheel

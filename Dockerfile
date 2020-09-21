@@ -3,7 +3,7 @@ FROM python:3-slim
 WORKDIR /usr/src/app
 
 RUN apt-get update && \
-    apt-get install --no-install-recommends -y icu-devtools libicu-dev build-essential pkg-config && \
+    apt-get install --no-install-recommends -y icu-devtools libicu-dev build-essential pkg-config git && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
