@@ -16,31 +16,23 @@ build:
 shell:
 	docker run -it ${VOLUMES} --entrypoint /bin/bash followthemoney-predict:latest
 
-data/xref.aleph.all.parquet:
+data/xref.%.all.parquet:
 	${FOllOWTHEMONEY_PREDICT} \
-		data 
-			--data-source aleph \
+		data \
+			--data-source "$*" \
 			--aleph-host ${ALEPHCLIENT_HOST} \
 			--aleph-api-key ${ALEPHCLIENT_API_KEY} \
-			--output-file /data/xref.aleph.all.parquet \
+			--output-file /data/xref.$*.all.parquet \
 			--cache-dir /cache/ \
 		xref
 
-models/model.linear.pkl: data/xref.aleph.all.parquet
+models/model.%.pkl: data/xref.aleph.all.parquet
 	${FOllOWTHEMONEY_PREDICT} \
 		model \
 			--data-file /data/xref.aleph.all.parquet \
-			--output-file /models/model.linear.pkl \
+			--output-file /models/model.$*.pkl \
 		xref \
-		linear
-
-models/model.xgboost.pkl: data/xref.aleph.all.parquet
-	${FOllOWTHEMONEY_PREDICT} \
-		model \
-			--data-file /data/xref.aleph.all.parquet \
-			--output-file /models/model.xgboost.pkl \
-		xref \
-		xgboost
+		$*
 
 evaluate: models/model.xgboost.pkl models/model.linear.pkl
 	${FOllOWTHEMONEY_PREDICT} \
