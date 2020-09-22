@@ -1,7 +1,6 @@
 import itertools as IT
 
 from alephclient.api import AlephAPI
-from tqdm import tqdm
 
 from .common import DataSource, cache_collection, cache_entityset, retry_aleph_exception
 
@@ -51,8 +50,7 @@ class AlephSource(DataSource):
     def get_entitysets(self, set_types=None):
         api = self._aleph_api()
         entitysets = api.entitysets(set_types=set_types)
-        total = entitysets.result.get("total")
-        for entityset in tqdm(entitysets, desc="Reading Profiles", total=total):
+        for entityset in entitysets:
             yield entityset
 
     def get_all_collections(self):
