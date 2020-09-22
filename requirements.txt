@@ -1,7 +1,7 @@
 click
 
-alephclient
-followthemoney
+alephclient==2.1.1
+followthemoney==2.1.8
 
 gitpython
 
