@@ -31,7 +31,7 @@ class AlephSource(DataSource):
         api = self._aleph_api()
         setitems = api.entitysetitems(entityset["id"], publisher=True)
         if schema:
-            setitems = filter(lambda e: e["schema"] in schema, setitems)
+            setitems = filter(lambda e: e.get("schema") in schema, setitems)
         setitems = IT.islice(setitems, self.max_entities_per_collection)
         yield from setitems
 
