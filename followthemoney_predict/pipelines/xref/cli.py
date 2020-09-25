@@ -27,8 +27,8 @@ def data_cli(ctx):
     )
 
     if ctx.obj["workflow"].IS_DASK:
-        df = pairs.to_dataframe(meta=list(schema.items())).compute()
-        df.to_parquet(ctx.obj["output_file"], schema="infer")
+        df = pairs.to_dataframe(meta=schema).compute()
+        df.to_parquet(ctx.obj["output_file"])
     else:
         pairs.to_parquet(ctx.obj["output_file"], meta=schema)
 

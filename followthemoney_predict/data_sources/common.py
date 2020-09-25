@@ -11,7 +11,7 @@ from alephclient.api import AlephException
 
 class DataSource:
     def __init__(self, **settings):
-        self.settings = settings
+        pass
 
     def get_collection_entities_by_foreign_id(self, foreign_id, schema=None):
         collection = self.get_collection_by_foreign_id(foreign_id)

@@ -11,7 +11,6 @@ from followthemoney.exc import InvalidData
 
 from . import settings
 
-PROXY_CACHE_SIZE = 1_000_000
 N_LINES_READ = 100
 DEBUG = False
 
@@ -194,21 +193,11 @@ def pairs_to_flat(item):
     return {**item, **pair}
 
 
-def create_model_proxy(entity, cache={}):
+def create_model_proxy(entity):
     from followthemoney import model
 
-    eid = entity["id"]
-    try:
-        return cache[eid]
-    except KeyError:
-        properties = {k: ensure_list(v) for k, v in entity["properties"].items()}
-        c = cache[eid] = model.get_proxy({**entity, "properties": properties})
-        if len(cache) > PROXY_CACHE_SIZE:
-            N = len(cache) - PROXY_CACHE_SIZE
-            keys = IT.islice(cache.keys(), N)
-            for k in keys:
-                cache.pop(k)
-        return c
+    properties = {k: ensure_list(v) for k, v in entity["properties"].items()}
+    return model.get_proxy({**entity, "properties": properties})
 
 
 def pairs_calc_ftm_features(
