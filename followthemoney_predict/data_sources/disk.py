@@ -22,7 +22,10 @@ class DiskSource(DataSource):
                     yield data
 
     def get_entities(self, collection, schema=None):
-        collection_foreign_id = collection["foreign_id"]
+        try:
+            collection_foreign_id = collection["foreign_id"]
+        except KeyError:
+            return
         with gzip.open(
             self.collection_cache / f"{collection_foreign_id}.jsonl.gz"
         ) as fd:
