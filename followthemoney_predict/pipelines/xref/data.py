@@ -12,6 +12,7 @@ def get_data_streams(workflow, data_source, negative_collections):
     logging.debug("Getting all collections and profiles")
     collections = list(data_source.get_all_collections())
     entity_sets = list(data_source.get_entitysets(set_types="profile"))
+
     profile_stream = (
         workflow.from_sequence(tqdm(entity_sets, desc="Profile EntitySets"))
         .map(data_source.get_entityset_items, schema=settings.SCHEMAS)

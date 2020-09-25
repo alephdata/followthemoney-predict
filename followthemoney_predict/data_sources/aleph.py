@@ -15,6 +15,7 @@ class AlephSource(DataSource):
         cache_dir="./cache/",
         **settings,
     ):
+        self._api = None
         self.aleph_params = aleph_params or ALEPH_PARAMS
         self.max_entities_per_collection = max_entities_per_collection
         self.cache_dir = cache_dir
@@ -30,7 +31,7 @@ class AlephSource(DataSource):
         api = self._aleph_api()
         setitems = api.entitysetitems(entityset["id"], publisher=True)
         if schema:
-            setitems = filter(lambda e: e.get("schema") in schema, setitems)
+            setitems = filter(lambda e: e.get('entity', {}).get("schema") in schema, setitems)
         setitems = IT.islice(setitems, self.max_entities_per_collection)
         yield from setitems
 
@@ -62,4 +63,7 @@ class AlephSource(DataSource):
         return api.get_collection_by_foreign_id(foreign_id)
 
     def _aleph_api(self):
-        return AlephAPI(**self.aleph_params)
+        if self._api:
+            return self._api
+        self._api = AlephAPI(**self.aleph_params)
+        return self._api

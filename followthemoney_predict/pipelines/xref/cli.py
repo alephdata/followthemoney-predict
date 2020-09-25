@@ -1,9 +1,7 @@
 import itertools as IT
 import logging
-import pickle
 
 import click
-import pandas as pd
 
 from . import data, data_schema, settings
 from .models import XrefModel, XrefLinear, XrefXGBoost
@@ -29,8 +27,7 @@ def data_cli(ctx):
     )
 
     if ctx.obj["workflow"].IS_DASK:
-        pairs = create_full_stream(stream_set)
-        df = pairs.to_dataframe(meta=schema)
+        df = pairs.to_dataframe(meta=list(schema.items())).compute()
         df.to_parquet(ctx.obj["output_file"], schema="infer")
     else:
         pairs.to_parquet(ctx.obj["output_file"], meta=schema)

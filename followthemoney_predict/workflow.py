@@ -1,5 +1,4 @@
-import os
-import warnings
+import logging
 
 from .util import unify_map
 
@@ -17,8 +16,10 @@ def init_dask(workflow, cache_dir=None, client_kwargs=None):
 
     cache = Cache(2e9)
     cache.register()
-    client = Client(client_kwargs)
-    print(f"Dask Client: {client}")
+
+    client_kwargs = client_kwargs or {}
+    client = Client(**client_kwargs)
+    logging.info(f"Dask Client: {client}")
     return workflow
 
 

@@ -50,8 +50,8 @@ def cli(ctx, debug, log):
     type=click.Choice(workflow.WORKFLOWS),
     default=workflow.WORKFLOWS[0],
 )
-@click.option("--dask-nworkers", default=1)
-@click.option("--dask-threads-per-worker", default=8)
+@click.option("--dask-nworkers", default=None)
+@click.option("--dask-threads-per-worker", default=None)
 @click.pass_context
 def data_cli(
     ctx,
@@ -117,8 +117,8 @@ def model_cli(ctx, output_file, data_file):
     type=click.Choice(workflow.WORKFLOWS),
     default=workflow.WORKFLOWS[0],
 )
-@click.option("--dask-nworkers", default=1)
-@click.option("--dask-threads-per-worker", default=8)
+@click.option("--dask-nworkers", default=None)
+@click.option("--dask-threads-per-worker", default=None)
 @click.pass_context
 def evaluate_cli(
     ctx,

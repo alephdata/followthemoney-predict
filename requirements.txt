@@ -15,5 +15,6 @@ xgboost
 sklearn
 
 dask[bag,dataframe,distributed]
+cachey
 bokeh
 pyarrow
