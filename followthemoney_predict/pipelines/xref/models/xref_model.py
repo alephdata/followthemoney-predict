@@ -132,6 +132,9 @@ class XrefModel:
         uncertain_indicies = np.argsort(
             np.abs(y_predict_proba[:, 0] - y_predict_proba[:, 1])
         )
+        y_predict = y_predict_proba[:, 0] < y_predict_proba[:, 1]
+        print(f"Num Positive Predictions: {y_predict.sum()}")
+        print(f"Num Negavie Predictions: {y_predict.shape[0] - y_predict.sum()}")
         print("Certain Positives")
         for i in reversed(certain_positive_indicies[-5:]):
             if y_predict_proba[i][1] > 0.5:

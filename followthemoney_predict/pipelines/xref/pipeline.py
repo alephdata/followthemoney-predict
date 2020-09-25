@@ -78,7 +78,9 @@ def create_pairs_positive(data_stream, n_lines_read=None):
         b = b.debug_counter("Positive Stream").debug_sampler("Positive Stream", 0.001)
     b = (
         b.filter(has_multi_name)
-        .map(entity_to_samples)
+        .map(
+            entity_to_samples
+        )  # we don't need to flatten/groupby since entities will be grouped up by the original sample
         .map(pairs_from_group, judgement=True, source="positive", replacement=False)
         .flatten()
     )
