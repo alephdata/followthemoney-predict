@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 
 from followthemoney_predict.util import multi_open
-from .util import format_prediction
+from .util import format_prediction, get_phases
 
 
 class XrefModel:
@@ -66,6 +66,21 @@ class XrefModel:
             return self.meta["scores"]["roc_auc"] > other.meta["scores"]["roc_auc"]
         except KeyError:
             raise ValueError("Model not fitted")
+
+    def prepair_train_test(self, df):
+        source_weight = {"negative": 0.1, "positive": 0.1, "profile": 10}
+        judgement_counts = dict(df.judgement.value_counts())
+        judgement_weight = {
+            k: 1 - v / sum(judgement_counts.values())
+            for k, v in judgement_counts.items()
+        }
+        df["weight"] = df.apply(
+            lambda row: source_weight[row.source] * judgement_weight[row.judgement],
+            axis=1,
+        )
+        phases = get_phases(df)
+        train, test = phases["train"], phases["test"]
+        return train, test
 
     def __repr__(self):
         return f"<{self.__class__.__name__}:{self.revision}:{self.version}>"
