@@ -153,13 +153,13 @@ class XrefModel:
         print("Certain Positives")
         for i in reversed(certain_positive_indicies[-5:]):
             if y_predict_proba[i][1] > 0.5:
-                print(format_prediction(df.iloc[i], y_predict_proba[i]))
+                print(format_prediction(df.iloc[int(i)], y_predict_proba[i]))
 
         print("Certain Negatives")
         for i in reversed(certain_negative_indicies[-5:]):
             if y_predict_proba[i][0] > 0.5:
-                print(format_prediction(df.iloc[i], y_predict_proba[i]))
+                print(format_prediction(df.iloc[int(i)], y_predict_proba[i]))
 
         print("Uncertain Predictions")
         for i in uncertain_indicies[:10]:
-            print(format_prediction(df.iloc[i], y_predict_proba[i]))
+            print(format_prediction(df.iloc[int(i)], y_predict_proba[i]))
