@@ -1,32 +1,18 @@
 """
 NOTE: try using `ignite` to simplify pytorch transformations?
 """
-from itertools import chain, count, cycle
-from collections import Counter, defaultdict
+from itertools import chain, cycle
 import logging
-import copy
-
-from normality import normalize
-
-import numpy as np
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pack_padded_sequence
-
+from torch.utils.data import DataLoader
 from tqdm import tqdm
+from followthemoney.exc import InvalidData
 
-from .xref_model import XrefModel
-
-
-def sample_weighted_criterion(criterion):
-    def _(predict, truth, weight):
-        loss = criterion(predict, truth)
-        loss *= weight
-        return loss.sum() / predict.shape[0]
-
-    return _
+from .xref_torch_model import XrefTorchModel
+from followthemoney_predict.lib.vocabulary import Vocabulary
 
 
 class TextEmbeddModule(nn.Module):
@@ -57,54 +43,13 @@ class TextEmbeddModule(nn.Module):
         return X
 
 
-class Vocabulary:
-    def __init__(self, vocabulary_size, ngram):
-        self.vocabulary_size = vocabulary_size
-        self.ngram = ngram
-
-    def _getngrams(self, item):
-        ngram = self.ngram
-        item_clean = normalize(item, latinize=True).lower()
-        for i in range(len(item_clean) - ngram):
-            yield item_clean[i : i + ngram]
-
-    def fit(self, X, *args, **kwargs):
-        ngram = self.ngram
-        vocabulary_counts = Counter()
-        n_docs = 0
-        for item in X:
-            n_docs += 1
-            for ngram in self._getngrams(item):
-                vocabulary_counts[ngram] += 1
-        max_count = n_docs * 0.9
-        while True:
-            item, count = vocabulary_counts.most_common(1)[0]
-            if count < max_count:
-                break
-            vocabulary_counts.pop(item)
-        self.vocabulary_ = {
-            item: idx + 1
-            for idx, (item, count) in zip(
-                range(self.vocabulary_size - 1), vocabulary_counts.most_common()
-            )
-        }
-        self.vocabulary_[None] = 0
-        return self
-
-    def transform(self, X, *args):
-        for item in X:
-            ngrams = list(self._getngrams(item))
-            yield [self.vocabulary_[n] for n in ngrams if n in self.vocabulary_]
-
-
-class XrefGru(XrefModel):
+class XrefGru(XrefTorchModel):
     version = "0.1"
 
     def __init__(self, batch_size=512):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.__device = None
 
-        self.batch_size = batch_size
-        self.meta = {}
+        self.meta = {"batch_size": batch_size}
         self.meta["init_args"] = {
             "vocabulary": {
                 "vocabulary_size": 8192,
@@ -146,7 +91,41 @@ class XrefGru(XrefModel):
             "weight": weight,
         }
 
-    def create_dataloader(self, df, shuffle=True):
+    def create_dataloader_entities(self, ftm_model, entity_pairs, shuffle=True):
+        vocabulary = self.clf["vocabulary"]
+        samples = []
+        filtered_idxs = []
+        sample_group_len = []
+        for i, (A, B) in enumerate(entity_pairs):
+            try:
+                ftm_model.common_schema(A.schema, B.schema)
+            except InvalidData:
+                filtered_idxs.append(i)
+                continue
+            A_names = list(filter(None, map(vocabulary, set(A.names))))
+            B_names = list(filter(None, map(vocabulary, set(B.names))))
+            if not len(A_names) or not len(B_names):
+                filtered_idxs.append(i)
+            elif len(A_names) > 1 or len(B_names) > 1:
+                sample_group_len.append((len(samples), len(A_names) * len(B_names)))
+            for A_name in A_names:
+                for B_name in B_names:
+                    samples.append(
+                        {
+                            "left_name": A_name,
+                            "right_name": B_name,
+                            "weight": 1,
+                            "judgement": -1,
+                        }
+                    )
+        return self.create_dataloader_samples(
+            samples,
+            shuffle,
+            filtered_idxs=filtered_idxs,
+            sample_group_len=sample_group_len,
+        )
+
+    def create_dataloader_dataframe(self, df, shuffle=True):
         vocabulary = self.clf["vocabulary"]
         left_names = vocabulary.transform(df.left_name)
         right_names = vocabulary.transform(df.right_name)
@@ -173,60 +152,29 @@ class XrefGru(XrefModel):
                         "judgement": judgement,
                     }
                 )
+        return self.create_dataloader_samples(
+            samples, shuffle, filtered_idxs=filtered_idxs
+        )
+
+    def create_dataloader_samples(
+        self, samples, shuffle=True, filtered_idxs=None, sample_group_len=None
+    ):
         data_loader = DataLoader(
             samples,
-            batch_size=self.batch_size,
+            batch_size=self.meta["batch_size"],
             shuffle=shuffle,
             collate_fn=self.transform_data,
             pin_memory=True,
             drop_last=False,
             num_workers=6,
         )
-        data_loader.filtered_idxs = filtered_idxs
+        data_loader.filtered_idxs = filtered_idxs or []
+        data_loader.sample_group_len = sample_group_len or []
         return data_loader
-
-    def _train(self, data, model, optimizer, criterion):
-        train_loss = 0
-        train_acc = 0
-        N = 0
-        for i, X in enumerate(
-            tqdm(data, desc="Training", leave=True, unit_scale=self.batch_size)
-        ):
-            N += X["judgement"].shape[0]
-            X = {k: v.to(self.device) for k, v in X.items()}
-            optimizer.zero_grad()
-            output = model(**X)
-            loss = criterion(output, X["judgement"], X["weight"])
-            train_loss += loss.item()
-            loss.backward()
-            optimizer.step()
-            train_acc += (output.argmax(1) == X["judgement"]).sum().item()
-
-        return train_loss / N, train_acc / N
-
-    def _test(self, data, model, criterion):
-        loss = 0
-        acc = 0
-        N = 0
-        N_positive = 0
-        outputs = []
-        for X in tqdm(data, desc="Testing", leave=True, unit_scale=self.batch_size):
-            with torch.no_grad():
-                N += X["judgement"].shape[0]
-                X = {k: v.to(self.device) for k, v in X.items()}
-                output = model(**X)
-                N_positive += output[:, -1].sum().item()
-                # N_positive += output.sum().item()
-                outputs.append(output.cpu())
-                loss = criterion(output, X["judgement"], X["weight"])
-                loss += loss.item()
-                acc += (output.argmax(1) == X["judgement"]).sum().item()
-        logging.debug(f"n_positive_pct: {N_positive / N}")
-        return loss / N, acc / N
 
     def fit(self, df):
         vocabulary = self.clf["vocabulary"]
-        embedding = self.clf["embedding"]
+        embedding = self.clf["embedding"].to(self.device)
 
         logging.info(f"Training GRU model on dataframe with shape: {df.shape}")
         train, test = self.prepair_train_test(df, weight_class=False)
@@ -248,64 +196,40 @@ class XrefGru(XrefModel):
         criterion_unweighted = torch.nn.CrossEntropyLoss(
             weight=class_weights, reduction="none"
         ).to(self.device)
-        criterion = sample_weighted_criterion(criterion_unweighted)
-
+        criterion = self.sample_weighted_criterion(criterion_unweighted)
         optimizer = torch.optim.SGD(embedding.parameters(), lr=0.05, momentum=0.9)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2, gamma=0.9)
 
-        train_data = self.create_dataloader(train)
-        test_data = self.create_dataloader(test, shuffle=False)
+        train_data = self.create_dataloader_dataframe(train)
+        test_data = self.create_dataloader_dataframe(test, shuffle=False)
 
-        best_model = None
-        best_loss = None
-        patience = cur_patience = 15
-        history = defaultdict(list)
-        for epoch in count(0):
-            train_loss, train_acc = self._train(
-                train_data, embedding, optimizer, criterion
-            )
-            scheduler.step()
-            valid_loss, valid_acc = self._test(test_data, embedding, criterion)
+        model, history = self.fit_torch(
+            embedding,
+            train_data,
+            test_data,
+            criterion,
+            optimizer,
+            scheduler,
+        )
+        self.clf["embedding"] = model
+        self.meta["history"] = history
 
-            logging.debug(f"Epoch: {epoch + 1}")
-            logging.debug(
-                f"\tLoss: {train_loss:.4e}(train)\t|\tAcc: {train_acc * 100:.3f}%(train)"
-            )
-            logging.debug(
-                f"\tLoss: {valid_loss:.4e}(valid)\t|\tAcc: {valid_acc * 100:.3f}%(valid)"
-            )
-
-            history["valid_loss"].append(valid_loss)
-            history["valid_acc"].append(valid_acc)
-            history["train_loss"].append(train_loss)
-            history["train_acc"].append(train_acc)
-
-            if best_loss is None or valid_loss < best_loss:
-                logging.debug(f"New best model: {valid_loss} < {best_loss}")
-                best_loss = valid_loss
-                best_model = copy.copy(embedding.state_dict())
-                cur_patience = patience
-            else:
-                cur_patience -= 1
-                logging.debug(f"Current Patience: {cur_patience}")
-            if cur_patience == 0:
-                logging.info("Out of patience.")
-                break
-        self.clf["embedding"].load_state_dict(best_model)
-        self.history = history
         scores = self.describe(test)
         self.meta["scores"] = scores
-        return embedding, history
+        return self
 
     def predict(self, df):
-        dataloader = self.create_dataloader(df, shuffle=False)
-        result = np.zeros((df.shape[0] - len(dataloader.filtered_idxs), 2))
-        with torch.no_grad():
-            for i, X in enumerate(dataloader):
-                X = {k: v.to(self.device) for k, v in X.items()}
-                output = self.clf["embedding"](**X).cpu()
-                N = output.shape[0]
-                result[i * N : (i + 1) * N] = output
-        skipped_idxs = dataloader.filtered_idxs
-        idxs = [si - i for i, si in enumerate(skipped_idxs)]
-        return np.insert(result, idxs, [0.5, 0.5], axis=0)
+        embedding = self.clf["embedding"]
+        dataloader = self.create_dataloader_dataframe(df, shuffle=False)
+        return self.predict_torch(embedding, dataloader)
+
+    def compare(self, ftm_model, A, B):
+        embedding = self.clf["embedding"]
+        dataloader = self.create_dataloader_entities(ftm_model, [(A, B)], shuffle=False)
+        return self.predict_torch(embedding, dataloader)[0][1]
+
+    def compare_batch(self, ftm_model, A, Bs):
+        embedding = self.clf["embedding"]
+        pairs = ((A, B) for B in Bs)
+        dataloader = self.create_dataloader_entities(ftm_model, pairs, shuffle=False)
+        return self.predict_torch(embedding, dataloader)

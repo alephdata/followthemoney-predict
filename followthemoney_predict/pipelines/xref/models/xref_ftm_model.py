@@ -34,3 +34,11 @@ class XrefFTMModel(XrefModel):
         features = ftm_features_from_proxy(A, B, schema)
         prediction = self.predict_array(features[np.newaxis])[0]
         return prediction[1]
+
+    def compare_batch(self, ftm_model, A, Bs):
+        features = []
+        for B in Bs:
+            schema = ftm_model.common_schema(A.schema, B.schema)
+            feature = ftm_features_from_proxy(A, B, schema)
+            features.append(feature)
+        return self.predict_array(np.asarray(features))
