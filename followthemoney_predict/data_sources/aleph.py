@@ -2,7 +2,8 @@ import itertools as IT
 
 from alephclient.api import AlephAPI
 
-from .common import DataSource, cache_collection, cache_entityset, retry_aleph_exception
+from .common import (DataSource, cache_collection, cache_entityset,
+                     retry_aleph_exception)
 
 ALEPH_PARAMS = {"retries": 10}
 
@@ -31,7 +32,9 @@ class AlephSource(DataSource):
         api = self._aleph_api()
         setitems = api.entitysetitems(entityset["id"], publisher=True)
         if schema:
-            setitems = filter(lambda e: e.get('entity', {}).get("schema") in schema, setitems)
+            setitems = filter(
+                lambda e: e.get("entity", {}).get("schema") in schema, setitems
+            )
         setitems = IT.islice(setitems, self.max_entities_per_collection)
         yield from setitems
 

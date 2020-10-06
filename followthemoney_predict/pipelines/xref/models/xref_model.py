@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 
 from followthemoney_predict.util import multi_open
+
 from .util import format_prediction, get_phases
 
 

@@ -1,18 +1,18 @@
 """
 NOTE: try using `ignite` to simplify pytorch transformations?
 """
-from itertools import chain, cycle
 import logging
+from itertools import chain, cycle
 
 import torch
 import torch.nn as nn
-from torch.nn.utils.rnn import pack_padded_sequence
-from torch.utils.data import DataLoader
-from tqdm import tqdm
 from followthemoney.exc import InvalidData
+from torch.nn.utils.rnn import pack_padded_sequence
+from tqdm import tqdm
+
+from followthemoney_predict.lib.vocabulary import Vocabulary
 
 from .xref_torch_model import XrefTorchModel
-from followthemoney_predict.lib.vocabulary import Vocabulary
 
 
 class TextEmbeddModule(nn.Module):
@@ -155,22 +155,6 @@ class XrefGru(XrefTorchModel):
         return self.create_dataloader_samples(
             samples, shuffle, filtered_idxs=filtered_idxs
         )
-
-    def create_dataloader_samples(
-        self, samples, shuffle=True, filtered_idxs=None, sample_group_len=None
-    ):
-        data_loader = DataLoader(
-            samples,
-            batch_size=self.meta["batch_size"],
-            shuffle=shuffle,
-            collate_fn=self.transform_data,
-            pin_memory=True,
-            drop_last=False,
-            num_workers=6,
-        )
-        data_loader.filtered_idxs = filtered_idxs or []
-        data_loader.sample_group_len = sample_group_len or []
-        return data_loader
 
     def fit(self, df):
         vocabulary = self.clf["vocabulary"]

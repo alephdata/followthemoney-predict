@@ -1,10 +1,11 @@
-from itertools import count
-from collections import defaultdict
-import logging
 import copy
+import logging
+from collections import defaultdict
+from itertools import count
 
 import numpy as np
 import torch
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .xref_model import XrefModel
@@ -46,6 +47,22 @@ class XrefTorchModel(XrefModel):
             return loss.sum() / predict.shape[0]
 
         return _
+
+    def create_dataloader_samples(
+        self, samples, shuffle=True, filtered_idxs=None, sample_group_len=None
+    ):
+        data_loader = DataLoader(
+            samples,
+            batch_size=self.meta["batch_size"],
+            shuffle=shuffle,
+            collate_fn=self.transform_data,
+            pin_memory=True,
+            drop_last=False,
+            num_workers=6,
+        )
+        data_loader.filtered_idxs = filtered_idxs or []
+        data_loader.sample_group_len = sample_group_len or []
+        return data_loader
 
     def _train(self, data, model, optimizer, criterion):
         train_loss = 0
