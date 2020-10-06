@@ -228,8 +228,8 @@ class XrefGru(XrefTorchModel):
         dataloader = self.create_dataloader_entities(ftm_model, [(A, B)], shuffle=False)
         return self.predict_torch(embedding, dataloader)[0][1]
 
-    def compare_batch(self, ftm_model, A, Bs):
+    def compare_batch(self, ftm_model, A, Bs, reduction=None):
         embedding = self.clf["embedding"]
         pairs = ((A, B) for B in Bs)
         dataloader = self.create_dataloader_entities(ftm_model, pairs, shuffle=False)
-        return self.predict_torch(embedding, dataloader)
+        return self.predict_torch(embedding, dataloader, reduction=reduction)

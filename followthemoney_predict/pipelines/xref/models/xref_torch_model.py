@@ -177,7 +177,7 @@ class XrefTorchModel(XrefModel):
             output = np.insert(output, idxs, [0.5, 0.5], axis=0)
         return output
 
-    def predict_torch(self, model, dataloader):
+    def predict_torch(self, model, dataloader, reduction=None):
         model = model.to(self.device).eval()
         N = len(dataloader.dataset)
         result = np.zeros((N, 2))
@@ -189,4 +189,4 @@ class XrefTorchModel(XrefModel):
                 n = output.shape[0]
                 result[base_i : base_i + n] = output
                 base_i += n
-        return self.unpack_output(dataloader, result)
+        return self.unpack_output(dataloader, result, reduction=reduction)
