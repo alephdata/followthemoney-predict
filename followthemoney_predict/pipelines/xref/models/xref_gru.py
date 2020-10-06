@@ -1,7 +1,7 @@
 """
 NOTE: try using `ignite` to simplify pytorch transformations?
 """
-from itertools import chain, count
+from itertools import chain, count, cycle
 from collections import Counter, defaultdict
 import logging
 import copy
@@ -18,6 +18,15 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from tqdm import tqdm
 
 from .xref_model import XrefModel
+
+
+def sample_weighted_criterion(criterion):
+    def _(predict, truth, weight):
+        loss = criterion(predict, truth)
+        loss *= weight
+        return loss.sum() / predict.shape[0]
+
+    return _
 
 
 class TextEmbeddModule(nn.Module):
@@ -108,46 +117,64 @@ class XrefGru(XrefModel):
         }
         super().__init__()
 
-    def transform_data(self, items):
-        N = len(items)
-        N_l = max(len(d[0]) for d in items)
-        N_r = max(len(d[1]) for d in items)
+    def transform_data(self, samples):
+        N = len(samples)
+        N_l = max(len(s["left_name"]) for s in samples)
+        N_r = max(len(s["right_name"]) for s in samples)
 
         y = torch.zeros(N, dtype=torch.long)
+        weight = torch.zeros(N, dtype=torch.float)
         X_l = torch.zeros((N, N_l), dtype=torch.long)
         X_r = torch.zeros((N, N_r), dtype=torch.long)
         left_seq_len = torch.zeros(N, dtype=torch.long)
         right_seq_len = torch.zeros(N, dtype=torch.long)
-        for i, (l, r, j) in enumerate(items):
-            X_l[i, : len(l)] = torch.tensor(l)
-            X_r[i, : len(r)] = torch.tensor(r)
-            left_seq_len[i] = len(l)
-            right_seq_len[i] = len(r)
-            y[i] = j
+        for i, sample in enumerate(samples):
+            left_name = sample["left_name"]
+            right_name = sample["right_name"]
+            X_l[i, : len(left_name)] = torch.tensor(left_name)
+            X_r[i, : len(right_name)] = torch.tensor(right_name)
+            left_seq_len[i] = len(left_name)
+            right_seq_len[i] = len(right_name)
+            y[i] = sample["judgement"]
+            weight[i] = sample["weight"]
         return {
             "left_names": X_l,
             "right_names": X_r,
             "left_seq_len": left_seq_len,
             "right_seq_len": right_seq_len,
             "judgement": y,
+            "weight": weight,
         }
 
     def create_dataloader(self, df, shuffle=True):
         vocabulary = self.clf["vocabulary"]
-        left_names = tuple(vocabulary.transform(df.left_name))
-        right_names = tuple(vocabulary.transform(df.right_name))
-        data = tuple(
-            filter(
-                lambda l_r_j: len(l_r_j[0]) and len(l_r_j[1]),
-                tqdm(
-                    zip(left_names, right_names, df.judgement),
-                    desc="Preprocessing Data",
-                    total=df.shape[0],
-                ),
-            )
+        left_names = vocabulary.transform(df.left_name)
+        right_names = vocabulary.transform(df.right_name)
+        samples = []
+        filtered_idxs = []
+        if hasattr(df, "weight"):
+            weights = df.weight
+        else:
+            weights = cycle([1])
+        _iter = tqdm(
+            zip(left_names, right_names, weights, df.judgement),
+            desc="Pre-processing Data",
+            total=df.shape[0],
         )
+        for i, (left_name, right_name, weight, judgement) in enumerate(_iter):
+            if not len(left_name) or not len(right_name):
+                filtered_idxs.append(i)
+            else:
+                samples.append(
+                    {
+                        "left_name": left_name,
+                        "right_name": right_name,
+                        "weight": weight,
+                        "judgement": judgement,
+                    }
+                )
         data_loader = DataLoader(
-            data,
+            samples,
             batch_size=self.batch_size,
             shuffle=shuffle,
             collate_fn=self.transform_data,
@@ -155,11 +182,7 @@ class XrefGru(XrefModel):
             drop_last=False,
             num_workers=6,
         )
-        data_loader.filtered_idxs = [
-            i
-            for i in range(df.shape[0])
-            if not (len(left_names[i]) and len(right_names[i]))
-        ]
+        data_loader.filtered_idxs = filtered_idxs
         return data_loader
 
     def _train(self, data, model, optimizer, criterion):
@@ -173,7 +196,7 @@ class XrefGru(XrefModel):
             X = {k: v.to(self.device) for k, v in X.items()}
             optimizer.zero_grad()
             output = model(**X)
-            loss = criterion(output, X["judgement"])
+            loss = criterion(output, X["judgement"], X["weight"])
             train_loss += loss.item()
             loss.backward()
             optimizer.step()
@@ -195,7 +218,7 @@ class XrefGru(XrefModel):
                 N_positive += output[:, -1].sum().item()
                 # N_positive += output.sum().item()
                 outputs.append(output.cpu())
-                loss = criterion(output, X["judgement"])
+                loss = criterion(output, X["judgement"], X["weight"])
                 loss += loss.item()
                 acc += (output.argmax(1) == X["judgement"]).sum().item()
         logging.debug(f"n_positive_pct: {N_positive / N}")
@@ -206,7 +229,7 @@ class XrefGru(XrefModel):
         embedding = self.clf["embedding"]
 
         logging.info(f"Training GRU model on dataframe with shape: {df.shape}")
-        train, test = self.prepair_train_test(df)
+        train, test = self.prepair_train_test(df, weight_class=False)
         train = train.reset_index(drop=True)
         test = test.reset_index(drop=True)
 
@@ -217,19 +240,16 @@ class XrefGru(XrefModel):
             )
         vocabulary.fit(name_iter)
 
-        # X_train = dict(
-        # name_left=self.transform_data(train['left_name']),
-        # name_right=self.transform_data(train['right_name'])
-        # )
-        # y_train = np.zeros((len(train), 2))
-        # y_train[:, train['judgement'].astype(np.int)] = 1
-
         N = df.shape[0]
         n_positive = df.judgement.sum()
         n_per_class = [N - n_positive, n_positive]
         class_weights = torch.FloatTensor([1 - (x / N) for x in n_per_class])
 
-        criterion = torch.nn.CrossEntropyLoss(weight=class_weights).to(self.device)
+        criterion_unweighted = torch.nn.CrossEntropyLoss(
+            weight=class_weights, reduction="none"
+        ).to(self.device)
+        criterion = sample_weighted_criterion(criterion_unweighted)
+
         optimizer = torch.optim.SGD(embedding.parameters(), lr=0.05, momentum=0.9)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2, gamma=0.9)
 
@@ -249,10 +269,10 @@ class XrefGru(XrefModel):
 
             logging.debug(f"Epoch: {epoch + 1}")
             logging.debug(
-                f"\tLoss: {train_loss:.4e}(train)\t|\tAcc: {train_acc * 100:.1f}%(train)"
+                f"\tLoss: {train_loss:.4e}(train)\t|\tAcc: {train_acc * 100:.3f}%(train)"
             )
             logging.debug(
-                f"\tLoss: {valid_loss:.4e}(valid)\t|\tAcc: {valid_acc * 100:.1f}%(valid)"
+                f"\tLoss: {valid_loss:.4e}(valid)\t|\tAcc: {valid_acc * 100:.3f}%(valid)"
             )
 
             history["valid_loss"].append(valid_loss)
@@ -273,6 +293,8 @@ class XrefGru(XrefModel):
                 break
         self.clf["embedding"].load_state_dict(best_model)
         self.history = history
+        scores = self.describe(test)
+        self.meta["scores"] = scores
         return embedding, history
 
     def predict(self, df):

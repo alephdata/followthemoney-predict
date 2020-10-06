@@ -67,17 +67,21 @@ class XrefModel:
         except KeyError:
             raise ValueError("Model not fitted")
 
-    def prepair_train_test(self, df):
-        source_weight = {"negative": 0.1, "positive": 0.1, "profile": 10}
-        judgement_counts = dict(df.judgement.value_counts())
-        judgement_weight = {
-            k: 1 - v / sum(judgement_counts.values())
-            for k, v in judgement_counts.items()
-        }
-        df["weight"] = df.apply(
-            lambda row: source_weight[row.source] * judgement_weight[row.judgement],
-            axis=1,
-        )
+    def prepair_train_test(self, df, weight_source=True, weight_class=True):
+        df["weight"] = 1
+        if weight_source:
+            source_weight = {"negative": 0.1, "positive": 0.1, "profile": 10}
+            df["weight"] *= df.apply(lambda row: source_weight[row.source], axis=1)
+        if weight_class:
+            judgement_counts = dict(df.judgement.value_counts())
+            judgement_weight = {
+                k: 1 - v / sum(judgement_counts.values())
+                for k, v in judgement_counts.items()
+            }
+            df["weight"] *= df.apply(
+                lambda row: judgement_weight[row.judgement],
+                axis=1,
+            )
         phases = get_phases(df)
         train, test = phases["train"], phases["test"]
         return train, test
