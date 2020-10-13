@@ -4,7 +4,7 @@ import logging
 import click
 
 from . import data, data_schema, settings
-from .models import XrefModel, XrefLinear, XrefXGBoost
+from .models import XrefLinear, XrefModel, XrefXGBoost
 from .models.util import format_prediction
 from .pipeline import create_dataframe_from_entities, create_full_stream
 

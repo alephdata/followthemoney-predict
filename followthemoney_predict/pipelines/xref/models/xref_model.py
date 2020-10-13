@@ -5,7 +5,8 @@ import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 
 from followthemoney_predict.util import multi_open
-from .util import format_prediction
+
+from .util import format_prediction, get_phases
 
 
 class XrefModel:
@@ -66,6 +67,25 @@ class XrefModel:
             return self.meta["scores"]["roc_auc"] > other.meta["scores"]["roc_auc"]
         except KeyError:
             raise ValueError("Model not fitted")
+
+    def prepair_train_test(self, df, weight_source=True, weight_class=True):
+        df["weight"] = 1
+        if weight_source:
+            source_weight = {"negative": 0.1, "positive": 0.1, "profile": 10}
+            df["weight"] *= df.apply(lambda row: source_weight[row.source], axis=1)
+        if weight_class:
+            judgement_counts = dict(df.judgement.value_counts())
+            judgement_weight = {
+                k: 1 - v / sum(judgement_counts.values())
+                for k, v in judgement_counts.items()
+            }
+            df["weight"] *= df.apply(
+                lambda row: judgement_weight[row.judgement],
+                axis=1,
+            )
+        phases = get_phases(df)
+        train, test = phases["train"], phases["test"]
+        return train, test
 
     def __repr__(self):
         return f"<{self.__class__.__name__}:{self.revision}:{self.version}>"
@@ -138,13 +158,13 @@ class XrefModel:
         print("Certain Positives")
         for i in reversed(certain_positive_indicies[-5:]):
             if y_predict_proba[i][1] > 0.5:
-                print(format_prediction(df.iloc[i], y_predict_proba[i]))
+                print(format_prediction(df.iloc[int(i)], y_predict_proba[i]))
 
         print("Certain Negatives")
         for i in reversed(certain_negative_indicies[-5:]):
             if y_predict_proba[i][0] > 0.5:
-                print(format_prediction(df.iloc[i], y_predict_proba[i]))
+                print(format_prediction(df.iloc[int(i)], y_predict_proba[i]))
 
         print("Uncertain Predictions")
         for i in uncertain_indicies[:10]:
-            print(format_prediction(df.iloc[i], y_predict_proba[i]))
+            print(format_prediction(df.iloc[int(i)], y_predict_proba[i]))
