@@ -1,5 +1,9 @@
 cache
-experiments
-models
-data
 venv
+data
+models
+experiments
+build
+dist
+followthemoney_predict.egg-info
+logs
