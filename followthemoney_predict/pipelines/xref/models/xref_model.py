@@ -4,7 +4,7 @@ import git
 import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 
-from followthemoney_predict.util import multi_open
+from followthemoney_predict.util import multi_open, get_revision
 
 from .util import format_prediction, get_phases
 
@@ -13,8 +13,7 @@ class XrefModel:
     __model_registry = {}
 
     def __init__(self, *args, **kwargs):
-        repo = git.Repo(search_parent_directories=True)
-        self.revision = repo.head.object.hexsha[:8]
+        self.revision = get_revision()
         self.version = self.version or None
         self.meta = getattr(self, "meta") or {}
         self.clf = getattr(self, "clf") or None
@@ -57,9 +56,9 @@ class XrefModel:
         model = model_cls.__new__(model_cls)
 
         model.clf = data["model"]
-        model.meta = data["meta"]
-        model.version = version["version"]
-        model.revision = version["revision"]
+        model.meta = data.get("meta")
+        model.version = version.get("version")
+        model.revision = version.get("revision")
         return model
 
     def better_than(self, other, metric="roc_auc"):

@@ -10,6 +10,23 @@ import gcsfs
 import numpy as np
 from sklearn.metrics import confusion_matrix
 
+from . import __version__
+
+try:
+    import git
+except ImportError:
+    git = None
+
+
+def get_revision():
+    if git is not None:
+        try:
+            repo = git.Repo(search_parent_directories=True)
+            return repo.head.object.hexsha[:8]
+        except git.InvalidGitRepositoryError:
+            pass
+    return __version__
+
 
 class DefaultNone(object):
     pass
