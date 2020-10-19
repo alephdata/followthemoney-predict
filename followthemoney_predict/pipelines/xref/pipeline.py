@@ -5,6 +5,8 @@ from collections import deque
 from zlib import crc32
 
 import numpy as np
+from normality import normalize
+from Levenshtein import jaro
 from banal import ensure_list
 from followthemoney import compare
 from followthemoney.exc import InvalidData
@@ -213,13 +215,21 @@ def pairs_calc_ftm_features(
     return pair
 
 
+def compare_names(left, right):
+    result = 0
+    left_list = [normalize(n, latinize=True) for n in left.names]
+    right_list = [normalize(n, latinize=True) for n in right.names]
+    result = max(jaro(left, right) for left, right in IT.product(left_list, right_list))
+    return result
+
+
 def ftm_features_from_proxy(
     A, B, schema, feature_idxs=settings.FEATURE_IDXS, fields_ban=settings.FIELDS_BAN_SET
 ):
     from followthemoney import model
 
     features = np.zeros(len(feature_idxs))
-    features[feature_idxs["name"]] = compare.compare_names(A, B)
+    features[feature_idxs["name"]] = compare_names(A, B)
     features[feature_idxs["country"]] = compare.compare_countries(A, B)
     schema = model.schemata[schema]
     for name, prop in schema.properties.items():
