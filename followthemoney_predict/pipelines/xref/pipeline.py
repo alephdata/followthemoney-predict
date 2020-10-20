@@ -220,7 +220,7 @@ def compare_names(left, right):
     right_list = [normalize(n, latinize=True) for n in right.names]
     try:
         return max(
-            Levenshtein.distance(left, right) / max(len(right), len(left), 1.0)
+            Levenshtein.ratio(left, right)
             for left, right in IT.product(left_list, right_list)
         )
     except ValueError:
