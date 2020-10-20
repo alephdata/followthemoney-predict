@@ -7,15 +7,15 @@ from .xref_ftm_model import XrefFTMModel
 
 
 class XrefXGBoost(XrefFTMModel):
-    version = "0.4"
+    version = "0.5"
 
     def __init__(self):
         self.meta = {
             "init_args": dict(
-                n_estimators=50,
+                n_estimators=60,
                 reg_lambda=5e-4,
                 gamma=1,
-                max_depth=3,
+                max_depth=4,
                 eta=0.4,
                 n_jobs=-1,
                 subsample=0.8,

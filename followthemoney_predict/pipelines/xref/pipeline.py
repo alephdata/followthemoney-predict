@@ -224,11 +224,17 @@ def compare_names(left, right):
 
 
 def ftm_features_from_proxy(
-    A, B, schema, feature_idxs=settings.FEATURE_IDXS, fields_ban=settings.FIELDS_BAN_SET
+    A,
+    B,
+    schema,
+    feature_idxs=settings.FEATURE_IDXS,
+    fields_ban=settings.FIELDS_BAN_SET,
+    missing_value=np.nan,
 ):
     from followthemoney import model
 
-    features = np.zeros(len(feature_idxs))
+    features = np.empty(len(feature_idxs))
+    features[:] = missing_value
     features[feature_idxs["name"]] = compare_names(A, B)
     features[feature_idxs["country"]] = compare.compare_countries(A, B)
     schema = model.schemata[schema]
