@@ -12,6 +12,7 @@ class XrefXGBoost(XrefFTMModel):
     def __init__(self):
         self.meta = {
             "init_args": dict(
+                objective="binary:logistic",
                 n_estimators=60,
                 reg_lambda=5e-4,
                 gamma=1,
