@@ -236,6 +236,9 @@ def ftm_features_from_proxy(
     features = np.empty(len(feature_idxs))
     features[:] = missing_value
     features[feature_idxs["name"]] = compare_names(A, B)
+    features[feature_idxs["name_length_left"]] = len(A)
+    features[feature_idxs["name_length_right"]] = len(B)
+    features[feature_idxs["name_length_diff"]] = abs(len(A) - len(B))
     features[feature_idxs["country"]] = compare.compare_countries(A, B)
     schema = model.schemata[schema]
     for name, prop in schema.properties.items():
