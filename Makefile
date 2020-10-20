@@ -1,4 +1,4 @@
-VOLUMES=-v ${PWD}/data:/data -v ${PWD}/cache:/cache -v ${PWD}/models:/models
+VOLUMES=-v ${PWD}/data:/data -v ${PWD}/cache:/cache -v ${PWD}/models:/models -v ${PWD}/followthemoney_predict:/usr/src/app/followthemoney_predict
 FOllOWTHEMONEY_PREDICT=docker run ${VOLUMES} followthemoney-predict:latest
 
 .PHONY: shell predict publish build
@@ -22,6 +22,9 @@ data/xref.%.all.parquet:
 	${FOllOWTHEMONEY_PREDICT} \
 		data \
 			--data-source "$*" \
+			--workflow "dask" \
+			--dask-nworkers 6 \
+			--dask-threads-per-worker 8 \
 			--aleph-host ${ALEPHCLIENT_HOST} \
 			--aleph-api-key ${ALEPHCLIENT_API_KEY} \
 			--output-file /data/xref.$*.all.parquet \

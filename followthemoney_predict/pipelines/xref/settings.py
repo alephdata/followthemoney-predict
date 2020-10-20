@@ -28,9 +28,7 @@ NEGATIVE_COLLECTION_FIDS = set(
 
 FEATURE_KEYS = [
     "name",
-    "name_length_left",
-    "name_length_right",
-    "name_length_diff",
+    "name_length_ratio",
     "country",
     "registrationNumber",
     "incorporationDate",

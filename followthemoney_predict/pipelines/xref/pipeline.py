@@ -6,7 +6,7 @@ from zlib import crc32
 
 import numpy as np
 from normality import normalize
-from Levenshtein import jaro
+import Levenshtein
 from banal import ensure_list
 from followthemoney import compare
 from followthemoney.exc import InvalidData
@@ -216,11 +216,22 @@ def pairs_calc_ftm_features(
 
 
 def compare_names(left, right):
-    result = 0
     left_list = [normalize(n, latinize=True) for n in left.names]
     right_list = [normalize(n, latinize=True) for n in right.names]
-    result = max(jaro(left, right) for left, right in IT.product(left_list, right_list))
-    return result
+    try:
+        return max(
+            Levenshtein.distance(left, right) / max(len(right), len(left), 1.0)
+            for left, right in IT.product(left_list, right_list)
+        )
+    except ValueError:
+        return 0
+
+
+def max_name_length(names):
+    try:
+        return max(len(n) for n in names)
+    except ValueError:
+        return 0
 
 
 def ftm_features_from_proxy(
@@ -235,11 +246,15 @@ def ftm_features_from_proxy(
 
     features = np.empty(len(feature_idxs))
     features[:] = missing_value
-    features[feature_idxs["name"]] = compare_names(A, B)
-    features[feature_idxs["name_length_left"]] = len(A)
-    features[feature_idxs["name_length_right"]] = len(B)
-    features[feature_idxs["name_length_diff"]] = abs(len(A) - len(B))
+
     features[feature_idxs["country"]] = compare.compare_countries(A, B)
+    features[feature_idxs["name"]] = compare_names(A, B)
+    len_A = max_name_length(A.names)
+    len_B = max_name_length(B.names)
+    features[feature_idxs["name_length_ratio"]] = min(len_A, len_B) / max(
+        len_A, len_B, 1.0
+    )
+
     schema = model.schemata[schema]
     for name, prop in schema.properties.items():
         if name in fields_ban:

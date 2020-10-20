@@ -69,7 +69,7 @@ def linear_cli(ctx):
 
 
 @click.command("xref")
-@click.option("--entity", "-e", "entity_ids", required=True, multiple=True, type=str)
+@click.option("--entity", "-e", "entity_ids", multiple=True, type=str)
 @click.option(
     "--collection-foreign-id", "-c", "collection_fids", multiple=True, type=str
 )
