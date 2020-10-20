@@ -8,7 +8,7 @@ with open("requirements.txt") as f:
 
 setup(
     name="followthemoney-predict",
-    version="0.9.0",
+    version="0.9.1",
     author="Organized Crime and Corruption Reporting Project",
     author_email="data@occrp.org",
     url="https://github.com/alephdata/followthemoney-predict/",
