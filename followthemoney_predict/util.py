@@ -7,6 +7,7 @@ from types import GeneratorType
 
 import click
 import gcsfs
+import requests
 import numpy as np
 from sklearn.metrics import confusion_matrix
 
@@ -60,13 +61,30 @@ class FileAnyType(click.File):
 
 
 def multi_open(
-    filename, mode, use_gcs=True, use_file=True, use_gzip=True, token=None, **kwargs
+    filename,
+    mode,
+    use_gcs=True,
+    use_http=True,
+    use_file=True,
+    use_gzip=True,
+    token=None,
+    **kwargs,
 ):
     if use_gcs and (filename.startswith("gcs://") or filename.startswith("gc://")):
         token = token or os.environ.get("FTM_PREDICT_GCS_TOKEN")
         logging.debug(f"Using GCSFS to open file: {filename}:{mode}")
         fs = gcsfs.GCSFileSystem(token=token)
         return fs.open(filename, mode=mode, **kwargs)
+    elif use_http and (
+        filename.startswith("http://") or filename.startswith("https://")
+    ):
+        if not mode.startswith("r"):
+            raise ValueError("HTTP File-type only supports read modes")
+        kwargs.setdefault("method", "GET")
+        kwargs.setdefault("url", filename)
+        kwargs["stream"] = True
+        response = requests.request(**kwargs)
+        return response.raw
     elif use_gzip and (filename.endswith(".gz") or filename.endswith(".gzip")):
         logging.debug(f"Using GZIP to open file: {filename}:{mode}")
         return gzip.open(filename, mode, **kwargs)

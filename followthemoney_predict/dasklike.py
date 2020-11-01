@@ -99,8 +99,8 @@ class DaskLike:
         return ((k, list(g)) for k, g in IT.groupby(stream, key=grouper))
 
     @dasklike_iter
-    def filter(self, fxn):
-        return filter(fxn, self.stream)
+    def filter(self, fxn, *args, **kwargs):
+        return filter(partial(fxn, *args, **kwargs), self.stream)
 
     def take(self, N, compute=True):
         take_stream, self.stream = IT.tee(self.stream)

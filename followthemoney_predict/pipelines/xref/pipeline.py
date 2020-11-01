@@ -3,6 +3,7 @@ import operator
 import random
 from collections import deque
 from zlib import crc32
+import logging
 
 import numpy as np
 from normality import normalize
@@ -17,12 +18,20 @@ N_LINES_READ = 100
 DEBUG = False
 
 
+logger = logging.getLogger(__name__)
+
+
 def has_properties(entity):
     return "properties" in entity and len(entity["properties"]) >= 1
 
 
-def has_multi_name(entity):
-    return len(set(n for n in entity["properties"].get("name", []) if "@" not in n)) > 1
+def is_multi_prop(prop):
+    # more than 1, less than 5 props for spam filtering
+    return 1 < len({p for p in prop if "@" not in p}) < 5
+
+
+def has_multi_props(entity, N=1):
+    return sum(map(is_multi_prop, entity["properties"].values())) >= N
 
 
 def pair_combinations(sequence):
@@ -33,21 +42,40 @@ def pair_combinations(sequence):
         deque(IT.islice(sequence2, i + 2), maxlen=0)
 
 
-def entity_to_samples(entity, field_ban=settings.FIELDS_BAN_SET):
-    props = {
-        k: vs for k, vs in entity.pop("properties").items() if vs and k not in field_ban
-    }
-    entity["collection_id"] = str(entity["collection_id"])
+def entity_to_samples(
+    entity,
+    fields_keep=set(settings.FEATURE_KEYS),
+    max_samples=None,
+):
+    props = {k: vs for k, vs in entity["properties"].items() if vs and k in fields_keep}
+    if not props:
+        return []
+    elif any(len(p) > 5 for p in props.values()):
+        return []
+    meta = entity.copy()
+    meta.pop("properties")
+    meta["collection_id"] = str(meta["collection_id"])
+
+    fields_multi = set(k for k, v in props.items() if is_multi_prop(v))
+    if not fields_multi:
+        return [{**meta, "properties": {k: v[0] for k, v in props.items()}}]
+    fields_single = set(props.keys()) - fields_multi
+    fields_multi_values = IT.product(*[[*props[f], None] for f in fields_multi])
     samples = []
-    names = set(props.pop("name", []))
-    for name in names:
-        if props:
-            n_props = random.randrange(0, len(props))
-            props_keep = random.sample(props.keys(), n_props)
-            props_sample = {k: random.choice(props[k]) for k in props_keep}
-            samples.append({**entity, "properties": {"name": name, **props_sample}})
+    for fields_multi_value in fields_multi_values:
+        if len(fields_single) > 1:
+            n_props = random.randrange(1, len(fields_single))
+            fields_keep = random.sample(fields_single, n_props)
         else:
-            samples.append({**entity, "properties": {"name": name}})
+            fields_keep = fields_single
+        cur_properties = {f: props[f][0] for f in fields_keep}
+        cur_properties.update(
+            {k: v for k, v in zip(fields_multi, fields_multi_value) if v is not None}
+        )
+        if cur_properties:
+            samples.append({**meta, "properties": cur_properties})
+        if max_samples and len(samples) == max_samples:
+            break
     return samples
 
 
@@ -79,9 +107,9 @@ def create_pairs_positive(data_stream, n_lines_read=None):
     if DEBUG:
         b = b.debug_counter("Positive Stream").debug_sampler("Positive Stream", 0.001)
     b = (
-        b.filter(has_multi_name)
+        b.filter(has_multi_props, N=2)
         .map(
-            entity_to_samples
+            entity_to_samples, max_samples=5
         )  # we don't need to flatten/groupby since entities will be grouped up by the original sample
         .map(pairs_from_group, judgement=True, source="positive", replacement=False)
         .flatten()

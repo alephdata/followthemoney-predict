@@ -63,7 +63,9 @@ FEATURE_IDXS = dict(zip(FEATURE_KEYS, range(len(FEATURE_KEYS))))
 
 SCHEMAS = set(("Person", "Company", "LegalEntity", "Organization", "PublicBody"))
 
-FIELDS_BAN_SET = set(["alephUrl", "modifiedAt", "retrievedAt", "sourceUrl"])
+FIELDS_BAN_SET = set(
+    ["alephUrl", "modifiedAt", "retrievedAt", "sourceUrl", "publisher", "publisherUrl"]
+)
 
 FEATURE_FTM_COMPARE_WEIGHTS = {
     "name": 0.6,

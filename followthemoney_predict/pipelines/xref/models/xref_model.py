@@ -71,16 +71,15 @@ class XrefModel:
         df["weight"] = 1
         if weight_source:
             source_weight = {"negative": 0.1, "positive": 0.1, "profile": 10}
-            df["weight"] *= df.apply(lambda row: source_weight[row.source], axis=1)
+            df["weight"] *= df.source.map(lambda source: source_weight[source])
         if weight_class:
             judgement_counts = dict(df.judgement.value_counts())
             judgement_weight = {
                 k: 1 - v / sum(judgement_counts.values())
                 for k, v in judgement_counts.items()
             }
-            df["weight"] *= df.apply(
-                lambda row: judgement_weight[row.judgement],
-                axis=1,
+            df["weight"] *= df.judgement.map(
+                lambda judgement: judgement_weight[judgement]
             )
         phases = get_phases(df)
         train, test = phases["train"], phases["test"]
