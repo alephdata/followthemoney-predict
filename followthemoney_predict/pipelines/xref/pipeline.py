@@ -3,6 +3,7 @@ import operator
 import random
 from collections import deque
 from zlib import crc32
+from functools import partial
 import logging
 
 import numpy as np
@@ -107,7 +108,7 @@ def create_pairs_positive(data_stream, n_lines_read=None):
     if DEBUG:
         b = b.debug_counter("Positive Stream").debug_sampler("Positive Stream", 0.001)
     b = (
-        b.filter(has_multi_props, N=2)
+        b.filter(partial(has_multi_props, N=2))
         .map(
             entity_to_samples, max_samples=5
         )  # we don't need to flatten/groupby since entities will be grouped up by the original sample
