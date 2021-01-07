@@ -29,13 +29,13 @@ from followthemoney import model
 from followthemoney.exc import InvalidData
 
 
-DATADIR = Path("./data/")
+DATADIR = Path("./data.secret/")
 CACHEDIR = Path("/tmp/ftm-type-predict/")
 fs = gcsfs.GCSFileSystem(
-    token=os.environ['GOOGLE_CREDENTIALS'],
-    project=os.environ['GOOGLE_PROJECT'],
+    token=os.environ["GOOGLE_CREDENTIALS"],
+    project=os.environ["GOOGLE_PROJECT"],
 )
-GOOGLE_BUCKET = os.environ['GOOGLE_BUCKET']
+GOOGLE_BUCKET = os.environ["GOOGLE_BUCKET"]
 
 
 def clean_value(name):
@@ -77,12 +77,14 @@ def _stream_collection(api, collection, N=50_000):
 def stream_entities():
     api = AlephAPI()
     collections = api.filter_collections("*")
-    collections = list(filter(lambda c: not c.get("secret", False), collections))
+    # collections = filter(lambda c: not c.get("secret", False), collections)
+    collections = list(collections)
     random.shuffle(collections)
     for c in tqdm(collections, desc="Collections"):
+        cid = c["id"]
         for entity in _stream_collection(api, c):
             if entity:
-                yield entity
+                yield cid, entity
 
 
 def type_datagen(proxy):
@@ -144,24 +146,25 @@ class SamplesFile:
     def full(self):
         return self.limit <= len(self._values)
 
-    def add(self, value):
+    def add(self, value, collection_id=None):
         if not value:
             return False
         self._N += 1
         if len(self) >= self.limit:
             i = random.randint(0, self._N)
             if i < len(self):
-                self._values[i] = value
+                self._values[i] = (collection_id, value)
             return False
         else:
-            self._values.append(value)
+            self._values.append((collection_id, value))
             return True
 
     def close(self):
         name = f"__label__{self.type}"
         self.fname.parent.mkdir(parents=True, exist_ok=True)
+        self._values.sort()
         with open(self.fname, "w+") as fd:
-            for value in self._values:
+            for collection_id, value in self._values:
                 fd.write(f"{name} {value}\n")
 
     def __len__(self):
@@ -178,7 +181,8 @@ def download_data(patience=500_000):
     files = {}
     cur_patience = patience
     with tqdm(total=1, desc="Downloading Data") as pbar:
-        for i, entity in enumerate(stream_entities()):
+        for i, (collection_id, entity) in enumerate(stream_entities()):
+            added_something = False
             try:
                 proxy = model.get_proxy(entity)
             except InvalidData:
@@ -195,13 +199,14 @@ def download_data(patience=500_000):
                     )
                 f = files[name]
                 for value in values:
-                    if f.add(clean_value(value)):
+                    if f.add(clean_value(value), collection_id=collection_id):
+                        added_something = True
                         pbar.update(1)
             if False and len(files) > 5:
-                # if not added_something:
-                #     cur_patience -= 1
-                # elif added_something:
-                #     cur_patience = patience
+                if not added_something:
+                    cur_patience -= 1
+                elif added_something:
+                    cur_patience = patience
                 if all(f.full() for f in files.values()):
                     pbar.write("Done downloading data")
                     break
@@ -223,16 +228,20 @@ def merge_shuffle(filenames, prefix):
     valid.parent.mkdir(parents=True, exist_ok=True)
     train.parent.mkdir(parents=True, exist_ok=True)
 
-    data = []
+    data_valid = []
+    data_train = []
     for source in tqdm(filenames, desc="merge shuffle"):
         with open(source) as fd:
-            data.extend(fd)
-    random.shuffle(data)
-    N = int(len(data) * 0.2)
+            data = list(fd)
+            N = int(len(data) * 0.2)
+            data_train.extend(data[N:])
+            data_valid.extend(data[:N])
+    random.shuffle(data_train)
+    random.shuffle(data_valid)
     with open(valid, "w+") as fd:
-        fd.writelines(data[:N])
+        fd.writelines(data_valid)
     with open(train, "w+") as fd:
-        fd.writelines(data[N:])
+        fd.writelines(data_train)
     return train, valid
 
 
@@ -258,6 +267,7 @@ def evaluate_model(model, data, basedir):
         cm = confusion_matrix(y, y_pred, labels=labels, normalize="true")
         df_cm = pd.DataFrame(cm, index=labels_pretty, columns=labels_pretty)
         plt.figure(figsize=(15, 10))
+        plt.clf()
         sn.heatmap(df_cm, annot=True, fmt=".2f")
         plt.title("Confusion Matrix")
         plt.ylabel("actual")
