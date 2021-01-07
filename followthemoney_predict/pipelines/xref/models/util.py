@@ -29,13 +29,14 @@ def format_prediction(sample, p):
     return f"    [{sample.source[:3]}] {left_name} ({left_nonnone}) vs {right_name} ({right_nonnone})-> {{ F: {p[0]:0.2f}, T: {p[1]:0.2f} }}"
 
 
-def get_phases(df):
-    phases = {}
-    for phase in df.phase.cat.categories:
-        phases[phase] = (
+def get_phases(df, phases=None):
+    phases = phases or df.phase.cat.categories
+    data = {}
+    for phase in phases:
+        data[phase] = (
             df.query(f"phase == '{phase}'").sample(frac=1).reset_index(drop=True)
         )
-    return phases
+    return data
 
 
 def xarray(X):

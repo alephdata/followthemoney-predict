@@ -1,7 +1,7 @@
 import logging
 
 import numpy as np
-import pandas as pd
+from dask import dataframe as dd
 
 from ..pipeline import ftm_features_from_proxy
 from .util import xarray
@@ -17,7 +17,7 @@ class XrefFTMModel(XrefModel):
 
     def fit_parquet(self, fd):
         self.meta["fit_data"] = fd.name
-        df = pd.read_parquet(fd).reset_index(drop=True)
+        df = dd.read_parquet(fd.name).reset_index(drop=True)
         return self.fit(df)
 
     def predict(self, df):

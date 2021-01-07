@@ -19,7 +19,7 @@ class XrefXGBoost(XrefFTMModel):
                 "max_depth": 18,
                 "min_child_weight": 0.6,
                 "n_estimators": 120,
-                "objective": 'binary":logistic',
+                "objective": "binary:logistic",
                 "reg_lambda": 0.2,
                 "subsample": 0.8,
                 "n_jobs": -1,

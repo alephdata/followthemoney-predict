@@ -1,8 +1,8 @@
 import pickle
 
-import git
 import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
+from dask import dataframe as dd
 
 from followthemoney_predict.util import multi_open, get_revision
 
@@ -68,21 +68,26 @@ class XrefModel:
             raise ValueError("Model not fitted")
 
     def prepair_train_test(self, df, weight_source=True, weight_class=True):
-        df["weight"] = 1
+        print("Preparing training data")
+        if not isinstance(df, dd.DataFrame):
+            df = dd.from_pandas(df, chunksize=10000)
+        df["weight"] = 1.0
         if weight_source:
             source_weight = {"negative": 0.1, "positive": 0.1, "profile": 10}
-            df["weight"] *= df.source.map(lambda source: source_weight[source])
+            df["weight"] *= df.source.map(
+                lambda source: source_weight.get(source, 1.0), meta=df.weight
+            )
         if weight_class:
-            judgement_counts = dict(df.judgement.value_counts())
+            judgement_counts = dict(df.judgement.value_counts().compute())
             judgement_weight = {
                 k: 1 - v / sum(judgement_counts.values())
                 for k, v in judgement_counts.items()
             }
             df["weight"] *= df.judgement.map(
-                lambda judgement: judgement_weight[judgement]
+                lambda judgement: judgement_weight[judgement], meta=df.weight
             )
-        phases = get_phases(df)
-        train, test = phases["train"], phases["test"]
+        phases = get_phases(df, ["train", "test"])
+        train, test = phases["train"].compute(), phases["test"].compute()
         return train, test
 
     def __repr__(self):
