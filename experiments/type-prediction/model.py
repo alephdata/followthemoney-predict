@@ -11,9 +11,6 @@ from tqdm import tqdm
 from normality import normalize
 import fasttext
 
-import gcsfs
-
-
 try:
     import seaborn as sn
     import pandas as pd
@@ -24,50 +21,35 @@ try:
 except ImportError:
     ANALYSIS_MODULES = False
 
-from alephclient.api import AlephAPI, AlephException
+from alephclient.api import AlephAPI
 from followthemoney import model
 from followthemoney.exc import InvalidData
+from ftmstore import Dataset
 
 
 DATADIR = Path("./data.secret/")
 CACHEDIR = Path("/tmp/ftm-type-predict/")
-fs = gcsfs.GCSFileSystem(
-    token=os.environ["GOOGLE_CREDENTIALS"],
-    project=os.environ["GOOGLE_PROJECT"],
-)
-GOOGLE_BUCKET = os.environ["GOOGLE_BUCKET"]
+STORE_URI = os.environ["FTM_STORE_URI"]
 
 
 def clean_value(name):
     return normalize(name, latinize=True, lowercase=True)
 
 
-def _stream_collection(api, collection, N=50_000):
+def _stream_collection(collection, N=50_000):
     fid = collection["foreign_id"]
+    collection_id = collection["id"]
     cachefile = CACHEDIR / f"{fid}.json"
     if not cachefile.exists():
         cachefile.parent.mkdir(parents=True, exist_ok=True)
         cachefile_back = CACHEDIR / "tmp.json"
-        try:
-            with fs.open(f"{GOOGLE_BUCKET}/{fid}/{fid}.json", "rb") as fd_in:
-                with open(cachefile_back, "wb+") as fd_out:
-                    for line in islice(fd_in, N):
-                        fd_out.write(line)
-                        yield json.loads(line)
-            cachefile_back.rename(cachefile)
-        except Exception as e:
-            print("Couldn't download with GCS:", str(e))
-            print(e)
-            try:
-                with open(cachefile_back, "w+") as fd:
-                    for item in islice(api.stream_entities(collection), N):
-                        fd.write(json.dumps(item))
-                        fd.write("\n")
-                        yield item
-                cachefile_back.rename(cachefile)
-            except AlephException:
-                print("Aborting collection:", collection["label"])
-                return
+        dataset = Dataset(f"collection_{collection_id}", origin="aleph")
+        with open(cachefile_back, "w+") as fd:
+            for entity in islice(dataset.iterate(skip_errors=True), N):
+                yield entity
+                fd.write(json.dumps(entity.to_dict()))
+                fd.write("\n")
+        cachefile_back.rename(cachefile)
     else:
         with open(cachefile) as fd:
             for line in fd:
@@ -82,7 +64,7 @@ def stream_entities():
     random.shuffle(collections)
     for c in tqdm(collections, desc="Collections"):
         cid = c["id"]
-        for entity in _stream_collection(api, c):
+        for entity in _stream_collection(c):
             if entity:
                 yield cid, entity
 
