@@ -41,6 +41,7 @@ def _stream_collection(collection, N=50_000):
     collection_id = collection["id"]
     cachefile = CACHEDIR / f"{fid}.json"
     if not cachefile.exists():
+        return
         cachefile.parent.mkdir(parents=True, exist_ok=True)
         cachefile_back = CACHEDIR / "tmp.json"
         dataset = Dataset(f"collection_{collection_id}", origin="aleph")
