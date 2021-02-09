@@ -1,0 +1,10 @@
+orjson
+tqdm
+
+numpy
+pandas
+matplotlib
+seaborn
+jupyter
+followthemoney
+normality
