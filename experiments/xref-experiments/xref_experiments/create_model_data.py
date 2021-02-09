@@ -1,8 +1,12 @@
 from pathlib import Path
-from collections import Counter
+import random
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+import sklearn.utils
+import numpy as np
+import pandas as pd
 import mmh3
 
 from xref_experiments.vocabulary import Vocabulary, stream_vocabulary_record
@@ -53,6 +57,9 @@ class ParquetModelData:
         self.pa_schema = pa_schema
 
     def __enter__(self):
+        return self.open()
+
+    def open(self):
         if self.mode.startswith("w"):
             self.__writers_queue = {p: [] for p in self.phases}
             self.__writers = {
@@ -61,13 +68,69 @@ class ParquetModelData:
                 )
                 for p in self.phases
             }
+        elif self.mode.startswith("r"):
+            self.__readers_df = {p: None for p in self.phases}
+            self.__readers = {
+                # NOTE: use memmap here?
+                p: pq.ParquetFile(self.data_dir / f"{p}.parquet")
+                for p in self.phases
+            }
         return self
 
-    def __exit__(self, *args, **kwargs):
+    def __exit__(self):
+        return self.close()
+
+    def close(self, *args, **kwargs):
         if self.mode.startswith("w"):
             self.flush_writers(force=True)
             for writer in self.__writers.values():
                 writer.close()
+        elif self.mode.startswith("r"):
+            del self.__readers_df
+            for reader in self.__readers.values():
+                reader.close()
+
+    def skipgrams(self, phase, negative_sampling=1.0, load_n_groups=5):
+        reader = self.__readers[phase]
+        n_groups = reader.metadata.num_row_groups
+        groups = list(range(n_groups))
+        random.shuffle(groups)
+        for i in range(0, n_groups, load_n_groups):
+            row_groups = groups[i : i + load_n_groups]
+            df = pd.concat(
+                (reader.read_row_group(g).to_pandas() for g in row_groups),
+                copy=False,
+            )
+            df = df.sort_values("id").reset_index(drop=True)
+
+            # we do a self inner join then remove duplicates. i'd prefer to
+            # immediately do comibnations without replacement but i can't find a
+            # faster way to do this.
+            df["rnd"] = np.random.randint(0, 1 << 16, size=df.shape[0], dtype="uint16")
+            pairs_pos = df.merge(
+                df.sort_values("rnd"), on="id", how="left", sort=False, copy=False
+            ).query("rnd_x != rnd_y")
+
+            pairs_pos["id_y"] = pairs_pos.id
+            pairs_pos = pairs_pos.rename(columns={"id": "id_x"}, copy=False).drop(
+                columns=["rnd_y", "rnd_x"]
+            )
+
+            n_neg = int(pairs_pos.shape[0] * negative_sampling)
+            left_neg = sklearn.utils.resample(
+                df, n_samples=n_neg, replace=True
+            ).reset_index(drop=True)
+            right_neg = sklearn.utils.resample(
+                df, n_samples=n_neg, replace=True
+            ).reset_index(drop=True)
+            pairs_neg = left_neg.merge(
+                right_neg, left_index=True, right_index=True, copy=False, sort=False
+            ).query("id_x != id_y")
+
+            pairs_pos["target"] = 1
+            pairs_neg["target"] = 0
+            pairs = pd.concat([pairs_pos, pairs_neg], copy=False)
+            yield sklearn.utils.shuffle(pairs)
 
     def flush_writers(self, force=False):
         for phase, queue in self.__writers_queue.items():

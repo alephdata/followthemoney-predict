@@ -1,6 +1,13 @@
+pyarrow
+
 orjson
 tqdm
+mmh3
 
+torch
+torchvision
+
+sklearn
 numpy
 pandas
 matplotlib
