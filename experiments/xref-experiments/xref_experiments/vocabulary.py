@@ -73,6 +73,9 @@ class Vocabulary:
     def add_multi(self, keys):
         self.counts.update(keys)
 
+    def __len__(self):
+        return len(self.lookup)
+
     def __getitem__(self, key):
         assert self.frozen
         idx = self.lookup.get(key)

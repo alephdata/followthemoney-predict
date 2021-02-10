@@ -25,6 +25,7 @@ def sorted_lengths(pack: PackedSequence) -> Tuple[Tensor, Tensor]:
 
 @jit.script
 def sorted_first_indices(pack: PackedSequence) -> Tensor:
+    print(pack.batch_sizes.device)
     return torch.arange(
         pack.batch_sizes[0],
         dtype=pack.batch_sizes.dtype,

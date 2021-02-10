@@ -1,5 +1,7 @@
 from pathlib import Path
 import random
+from functools import wraps
+from multiprocessing import Process, Queue
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -30,11 +32,53 @@ def normalize(phases):
 
 
 def load_vocabularies(basedir):
+    basedir = Path(basedir)
     vocabs = {}
     for name in ["ngrams", "group", "property", "schema"]:
         with open(basedir / f"{name}.json", "rb") as fd:
             vocabs[name] = Vocabulary.from_file(fd)
     return vocabs
+
+
+def resample_dataframe_batch_sizes(fxn):
+    @wraps(fxn)
+    def _(*args, batch_size=None, batch_last_partial=False, max_samples=None, **kwargs):
+        left_over = None
+        n_samples = 0
+        for data in fxn(*args, **kwargs):
+            if left_over is not None:
+                data = pd.concat((left_over, data))
+                left_over = None
+            while data.shape[0] > batch_size:
+                yield data.head(batch_size)
+                n_samples += batch_size
+                if max_samples and n_samples >= max_samples:
+                    return
+                data = data.tail(-batch_size)
+            left_over = data
+        if batch_last_partial:
+            yield left_over
+
+    return _
+
+
+def _multi_skipgram(pmd, queue, *args, **kwargs):
+    with pmd:
+        for batch in pmd.skipgrams(*args, **kwargs):
+            queue.put(batch)
+        queue.put(None)
+
+
+def multiprocess_skipgram(pmd, *args, n_workers=1, queue_max_size=256, **kwargs):
+    queue = Queue(queue_max_size)
+    process = Process(target=_multi_skipgram, args=(pmd, queue, *args), kwargs=kwargs)
+    process.start()
+    while True:
+        result = queue.get()
+        if result is None:
+            break
+        yield result
+    process.join()
 
 
 class ParquetModelData:
@@ -69,7 +113,6 @@ class ParquetModelData:
                 for p in self.phases
             }
         elif self.mode.startswith("r"):
-            self.__readers_df = {p: None for p in self.phases}
             self.__readers = {
                 # NOTE: use memmap here?
                 p: pq.ParquetFile(self.data_dir / f"{p}.parquet")
@@ -77,26 +120,26 @@ class ParquetModelData:
             }
         return self
 
-    def __exit__(self):
+    def __exit__(self, *args, **kwargs):
         return self.close()
 
-    def close(self, *args, **kwargs):
+    def close(self):
         if self.mode.startswith("w"):
             self.flush_writers(force=True)
             for writer in self.__writers.values():
                 writer.close()
         elif self.mode.startswith("r"):
-            del self.__readers_df
-            for reader in self.__readers.values():
-                reader.close()
+            pass
 
+    @resample_dataframe_batch_sizes
     def skipgrams(self, phase, negative_sampling=1.0, load_n_groups=5):
         reader = self.__readers[phase]
         n_groups = reader.metadata.num_row_groups
         groups = list(range(n_groups))
         random.shuffle(groups)
         for i in range(0, n_groups, load_n_groups):
-            row_groups = groups[i : i + load_n_groups]
+            row_groups = sorted(groups[i : i + load_n_groups])
+            print("Reading from parquet row groups:", row_groups)
             df = pd.concat(
                 (reader.read_row_group(g).to_pandas() for g in row_groups),
                 copy=False,
