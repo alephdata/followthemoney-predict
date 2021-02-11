@@ -132,14 +132,13 @@ class ParquetModelData:
             pass
 
     @resample_dataframe_batch_sizes
-    def skipgrams(self, phase, negative_sampling=1.0, load_n_groups=5):
+    def skipgrams(self, phase, negative_sampling=1.0, load_n_groups=10):
         reader = self.__readers[phase]
         n_groups = reader.metadata.num_row_groups
         groups = list(range(n_groups))
         random.shuffle(groups)
         for i in range(0, n_groups, load_n_groups):
             row_groups = sorted(groups[i : i + load_n_groups])
-            print("Reading from parquet row groups:", row_groups)
             df = pd.concat(
                 (reader.read_row_group(g).to_pandas() for g in row_groups),
                 copy=False,

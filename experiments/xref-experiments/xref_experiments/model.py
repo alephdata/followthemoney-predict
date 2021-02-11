@@ -43,7 +43,9 @@ class PropertyEmbedding(Module):
         self.n_gru_layers = n_gru_layers
         self.dropout = dropout
 
-        self.embedding = nn.EmbeddingBag(n_vocab, n_embed, mode="sum")
+        self.embedding = nn.EmbeddingBag(
+            n_vocab, n_embed, mode="mean", scale_grad_by_freq=True
+        )
         # self.recurrent = nn.GRU(
         # n_embed,
         # hidden_size=n_gru_hidden,
@@ -76,7 +78,7 @@ class PropertySkipgramModel(Module):
         kwargs.setdefault("n_vocab", len(pmd.vocabularies["ngrams"]))
 
         self.property_embedding = PropertyEmbedding(**kwargs)
-        self.sigmoid = nn.Sigmoid()
+        self.similarity = torch.nn.CosineSimilarity()
 
     def forward(self, X):
         ngrams_left = (
@@ -93,13 +95,13 @@ class PropertySkipgramModel(Module):
         X_left = self.property_embedding(ngrams_left)
         X_right = self.property_embedding(ngrams_right)
 
-        y_pred = self.sigmoid((X_left * X_right).sum(-1))
+        y_pred = self.similarity(X_left, X_right)
         return y_pred
 
     def fit(
         self, lr, n_epochs, batch_size=8192, n_train_samples=None, n_valid_samples=None
     ):
-        loss_fn = nn.BCELoss().to(self.device)
+        loss_fn = nn.MSELoss().to(self.device)
         optimizer = torch.optim.RMSprop(self.parameters(), lr=lr)
         history = {f: {"loss": [], "acc": []} for f in ("train", "valid")}
         for n_epoch in range(n_epochs):
@@ -112,6 +114,7 @@ class PropertySkipgramModel(Module):
                     "train", batch_size=batch_size, max_samples=n_train_samples
                 )
                 for n_batch, X in enumerate(data_train):
+                    self.zero_grad()
                     y_true = torch.as_tensor(
                         X["target"].values, dtype=torch.float, device=self.device
                     )
@@ -176,5 +179,5 @@ if __name__ == "__main__":
         )
         # model = model.cuda()
         history = model.fit(
-            lr=1e-3, n_epochs=100, n_train_samples=5_000_000, n_valid_samples=100_000
+            lr=0.1, n_epochs=100, n_train_samples=16_000_000, n_valid_samples=1_000_000
         )
