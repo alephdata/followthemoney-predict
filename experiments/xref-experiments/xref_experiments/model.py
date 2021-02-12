@@ -1,16 +1,11 @@
-from itertools import islice
-
 import torch
 from torch import nn
-from torch import optim
 
 from tqdm import tqdm
 
-from xref_experiments.utils import last_items, sorted_last_indices, sorted_first_indices
 from xref_experiments.create_model_data import (
     load_vocabularies,
     ParquetModelData,
-    multiprocess_skipgram,
 )
 
 
@@ -35,24 +30,14 @@ class Module(nn.Module):
 
 
 class PropertyEmbedding(Module):
-    def __init__(self, n_vocab, n_embed, n_gru_hidden, n_gru_layers=2, dropout=0.5):
+    def __init__(self, n_vocab, n_embed):
         super().__init__()
         self.n_vocab = n_vocab
         self.n_embed = n_embed
-        self.n_gru_hidden = n_gru_hidden
-        self.n_gru_layers = n_gru_layers
-        self.dropout = dropout
 
         self.embedding = nn.EmbeddingBag(
             n_vocab, n_embed, mode="mean", scale_grad_by_freq=True
         )
-        # self.recurrent = nn.GRU(
-        # n_embed,
-        # hidden_size=n_gru_hidden,
-        # num_layers=n_gru_layers,
-        # dropout=dropout,
-        # bidirectional=True,
-        # )
 
     def forward(self, ngrams):
         ngrams_flat = torch.cat(ngrams)
@@ -60,14 +45,6 @@ class PropertyEmbedding(Module):
             [0] + [n.shape[0] for n in ngrams[:-1]], device=self.device
         ).cumsum(dim=0)
         return self.embedding(ngrams_flat, ngrams_offset)
-
-        # ngrams_packed = nn.utils.rnn.pack_sequence(ngrams, enforce_sorted=False).to(
-        #     self.device
-        # )
-        # embed_packed = packed_elementwise_apply(self.embedding, ngrams_packed)
-        # X_packed, h_packed = self.recurrent(embed_packed)
-        # X = last_items(X_packed, unsort=True)
-        # return X
 
 
 class PropertySkipgramModel(Module):
@@ -99,11 +76,17 @@ class PropertySkipgramModel(Module):
         return y_pred
 
     def fit(
-        self, lr, n_epochs, batch_size=8192, n_train_samples=None, n_valid_samples=None
+        self,
+        lr,
+        n_epochs,
+        max_norm=1,
+        batch_size=8192,
+        n_train_samples=None,
+        n_valid_samples=None,
     ):
         loss_fn = nn.MSELoss().to(self.device)
-        optimizer = torch.optim.RMSprop(self.parameters(), lr=lr)
-        history = {f: {"loss": [], "acc": []} for f in ("train", "valid")}
+        optimizer = torch.optim.AdamW(self.parameters(), lr=lr)
+        self.history_ = {f: {"loss": [], "acc": []} for f in ("train", "valid")}
         for n_epoch in range(n_epochs):
             train_loss_total = 0
             train_acc_total = 0
@@ -121,7 +104,9 @@ class PropertySkipgramModel(Module):
                     y_pred = self(X)
                     loss = loss_fn(y_pred, y_true)
                     loss.backward()
+                    nn.utils.clip_grad_norm_(self.parameters(), max_norm=1)
                     optimizer.step()
+
                     train_loss_total += loss.item()
                     train_acc_total += (
                         (y_pred > 0.5) == y_true
@@ -139,8 +124,8 @@ class PropertySkipgramModel(Module):
                 pbar.write(
                     f"TRAIN FINAL epoch: {n_epoch}, n_batch: {n_batch}, loss: {train_loss}, acc: {train_acc}"
                 )
-                history["train"]["loss"].append(train_loss)
-                history["train"]["acc"].append(train_acc)
+                self.history_["train"]["loss"].append(train_loss)
+                self.history_["train"]["acc"].append(train_acc)
 
             self.eval()
             valid_loss_total = 0
@@ -165,19 +150,17 @@ class PropertySkipgramModel(Module):
                 pbar.write(
                     f"VALID: n_batch: {n_batch}, loss: {valid_loss}, acc: {valid_acc}"
                 )
-                history["valid"]["loss"].append(valid_loss)
-                history["valid"]["acc"].append(valid_acc)
-        return history
+                self.history_["valid"]["loss"].append(valid_loss)
+                self.history_["valid"]["acc"].append(valid_acc)
+        return self.history_
 
 
 if __name__ == "__main__":
     vocabularies = load_vocabularies("/scratch/xref-experiments/vocabulary/")
     data_dir = "/scratch/xref-experiments/model-data/"
     with ParquetModelData(data_dir, "r", vocabularies=vocabularies) as data:
-        model = PropertySkipgramModel(
-            data, n_embed=512, n_gru_hidden=64, n_gru_layers=2
-        )
-        # model = model.cuda()
+        model = PropertySkipgramModel(data, n_embed=1024)
+        model = model.cuda()
         history = model.fit(
             lr=0.1, n_epochs=100, n_train_samples=16_000_000, n_valid_samples=1_000_000
         )

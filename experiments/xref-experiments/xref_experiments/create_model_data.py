@@ -136,6 +136,7 @@ class ParquetModelData:
         reader = self.__readers[phase]
         n_groups = reader.metadata.num_row_groups
         groups = list(range(n_groups))
+        random.seed(42)
         random.shuffle(groups)
         for i in range(0, n_groups, load_n_groups):
             row_groups = sorted(groups[i : i + load_n_groups])
