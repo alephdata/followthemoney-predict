@@ -86,7 +86,9 @@ class Vocabulary:
         return self.lookup[self.unk]
 
     def invert(self, indicies):
-        if not isinstance(indicies, (list, tuple)):
+        try:
+            indicies = iter(indicies)
+        except TypeError:
             indicies = [indicies]
         assert self.frozen
         if self.lookup_inv is None:

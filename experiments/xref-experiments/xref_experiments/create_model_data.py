@@ -43,6 +43,8 @@ def load_vocabularies(basedir):
 def resample_dataframe_batch_sizes(fxn):
     @wraps(fxn)
     def _(*args, batch_size=None, batch_last_partial=False, max_samples=None, **kwargs):
+        if not batch_size:
+            return fxn(*args, **kwargs)
         left_over = None
         n_samples = 0
         for data in fxn(*args, **kwargs):
@@ -131,12 +133,12 @@ class ParquetModelData:
         elif self.mode.startswith("r"):
             pass
 
-    @resample_dataframe_batch_sizes
-    def skipgrams(self, phase, negative_sampling=1.0, load_n_groups=10):
+    def read_groups_shuffle(self, phase, load_n_groups=10, random_seed=None):
         reader = self.__readers[phase]
         n_groups = reader.metadata.num_row_groups
         groups = list(range(n_groups))
-        random.seed(42)
+        if random_seed:
+            random.seed(random_seed)
         random.shuffle(groups)
         for i in range(0, n_groups, load_n_groups):
             row_groups = sorted(groups[i : i + load_n_groups])
@@ -145,7 +147,15 @@ class ParquetModelData:
                 copy=False,
             )
             df = df.sort_values("id").reset_index(drop=True)
+            yield df
 
+    @resample_dataframe_batch_sizes
+    def skipgrams(
+        self, phase, negative_sampling=1.0, load_n_groups=10, random_seed=None
+    ):
+        if random_seed:
+            np.random.seed(random_seed)
+        for df in self.read_groups_shuffle(phase, load_n_groups):
             # we do a self inner join then remove duplicates. i'd prefer to
             # immediately do comibnations without replacement but i can't find a
             # faster way to do this.
@@ -173,7 +183,7 @@ class ParquetModelData:
             pairs_pos["target"] = 1
             pairs_neg["target"] = 0
             pairs = pd.concat([pairs_pos, pairs_neg], copy=False)
-            yield sklearn.utils.shuffle(pairs)
+            yield sklearn.utils.shuffle(pairs, random_state=random_seed)
 
     def flush_writers(self, force=False):
         for phase, queue in self.__writers_queue.items():
