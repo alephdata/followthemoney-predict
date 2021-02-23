@@ -77,15 +77,22 @@ class PropertySkipgramModel(Module):
 
     def fit(
         self,
-        lr,
         n_epochs,
+        lr,
+        weight_decay=0.01,
         max_norm=1,
+        negative_sampling=1,
         batch_size=8192,
         n_train_samples=None,
         n_valid_samples=None,
+        load_n_groups=10,
+        random_seed=None,
     ):
+        # TODO: weight MSELoss based on negative_sampling
         loss_fn = nn.MSELoss().to(self.device)
-        optimizer = torch.optim.AdamW(self.parameters(), lr=lr)
+        optimizer = torch.optim.AdamW(
+            self.parameters(), lr=lr, weight_decay=weight_decay
+        )
         self.history_ = {f: {"loss": [], "acc": []} for f in ("train", "valid")}
         for n_epoch in range(n_epochs):
             train_loss_total = 0
@@ -94,7 +101,12 @@ class PropertySkipgramModel(Module):
             print(f"******************* EPOCH {n_epoch} ***********************")
             with tqdm(desc="Training", total=n_train_samples) as pbar:
                 data_train = self.pmd.skipgrams(
-                    "train", batch_size=batch_size, max_samples=n_train_samples
+                    "train",
+                    batch_size=batch_size,
+                    max_samples=n_train_samples,
+                    negative_sampling=negative_sampling,
+                    load_n_groups=load_n_groups,
+                    random_seed=random_seed,
                 )
                 for n_batch, X in enumerate(data_train):
                     self.zero_grad()
@@ -132,7 +144,12 @@ class PropertySkipgramModel(Module):
             valid_acc_total = 0
             with tqdm(desc="Validating", total=n_valid_samples) as pbar:
                 data_valid = self.pmd.skipgrams(
-                    "valid", batch_size=batch_size, max_samples=n_valid_samples
+                    "valid",
+                    batch_size=batch_size,
+                    max_samples=n_valid_samples,
+                    negative_sampling=negative_sampling,
+                    load_n_groups=load_n_groups,
+                    random_seed=random_seed,
                 )
                 for n_batch, X in enumerate(data_valid):
                     y_true = torch.as_tensor(
@@ -162,5 +179,14 @@ if __name__ == "__main__":
         model = PropertySkipgramModel(data, n_embed=1024)
         model = model.cuda()
         history = model.fit(
-            lr=0.1, n_epochs=100, n_train_samples=16_000_000, n_valid_samples=1_000_000
+            n_epochs=100,
+            lr=0.005,
+            weight_decay=0.05,
+            n_train_samples=16_000,
+            n_valid_samples=1_000,
+            # n_train_samples=16_000_000,
+            # n_valid_samples=1_000_000,
+            negative_sampling=5,
+            load_n_groups=2,
+            random_seed=42,
         )
