@@ -93,7 +93,7 @@ class Vocabulary:
         assert self.frozen
         if self.lookup_inv is None:
             self.lookup_inv = {i: t for t, i in self.lookup.items()}
-        return [self.lookup_inv.get(i) for i in indicies]
+        return [self.lookup_inv.get(i, self.unk) for i in indicies]
 
     def to_list(self):
         values = list(self.lookup.keys())

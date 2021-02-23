@@ -46,6 +46,15 @@ class PropertyEmbedding(Module):
         ).cumsum(dim=0)
         return self.embedding(ngrams_flat, ngrams_offset)
 
+    def similar(self, ngrams, pool=None, k=10):
+        e = self([ngrams])[0]
+        if pool is None:
+            target = self.embedding.weight
+        else:
+            target = self(pool)
+        cossim = torch.cosine_similarity(e.view(1, -1), target)
+        return torch.topk(cossim, k=k, sorted=True)
+
 
 class PropertySkipgramModel(Module):
     def __init__(self, pmd, **kwargs):
@@ -75,6 +84,11 @@ class PropertySkipgramModel(Module):
         y_pred = self.similarity(X_left, X_right)
         return y_pred
 
+    def loss(self, predict, target, negative_sampling):
+        C = 1.0 / negative_sampling - 1.0
+        weights = (1 - target) * C + 1
+        return (weights * (predict - target).pow(2)).sum() / weights.sum()
+
     def fit(
         self,
         n_epochs,
@@ -88,8 +102,6 @@ class PropertySkipgramModel(Module):
         load_n_groups=10,
         random_seed=None,
     ):
-        # TODO: weight MSELoss based on negative_sampling
-        loss_fn = nn.MSELoss().to(self.device)
         optimizer = torch.optim.AdamW(
             self.parameters(), lr=lr, weight_decay=weight_decay
         )
@@ -114,7 +126,7 @@ class PropertySkipgramModel(Module):
                         X["target"].values, dtype=torch.float, device=self.device
                     )
                     y_pred = self(X)
-                    loss = loss_fn(y_pred, y_true)
+                    loss = self.loss(y_pred, y_true, negative_sampling)
                     loss.backward()
                     nn.utils.clip_grad_norm_(self.parameters(), max_norm=1)
                     optimizer.step()
@@ -156,7 +168,7 @@ class PropertySkipgramModel(Module):
                         X["target"].values, dtype=torch.float, device=self.device
                     )
                     y_pred = self(X)
-                    loss = loss_fn(y_pred, y_true)
+                    loss = self.loss(y_pred, y_true, negative_sampling)
                     valid_loss_total += loss.item()
                     valid_acc_total += (
                         (y_pred > 0.5) == y_true
@@ -176,11 +188,11 @@ if __name__ == "__main__":
     vocabularies = load_vocabularies("/scratch/xref-experiments/vocabulary/")
     data_dir = "/scratch/xref-experiments/model-data/"
     with ParquetModelData(data_dir, "r", vocabularies=vocabularies) as data:
-        model = PropertySkipgramModel(data, n_embed=1024)
+        model = PropertySkipgramModel(data, n_embed=2048)
         model = model.cuda()
         history = model.fit(
-            n_epochs=100,
-            lr=0.005,
+            n_epochs=1000,
+            lr=0.001,
             weight_decay=0.05,
             n_train_samples=16_000,
             n_valid_samples=1_000,
