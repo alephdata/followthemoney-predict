@@ -219,7 +219,9 @@ if __name__ == "__main__":
 
     data_path = Path("/data/xref-experiments/occrp-data-exports/data/")
     data_exports = list(data_path.glob("*/*.json"))
-    items = entity_generator(data_exports, entities_per_file=1_000_000)
+    items = entity_generator(
+        data_exports, entities_per_file=500_000, resevour_sample=True
+    )
     # items = stdin_reader()
 
     basedir = Path("/data/xref-experiments/model-data/")
