@@ -22,6 +22,7 @@ RECORD_SCHEMA = pa.schema(
         ("group", pa.uint8()),
         ("property", pa.uint16()),
         ("ngrams", pa.list_(pa.uint32())),
+        ("text", pa.string()),
     ]
 )
 
@@ -187,7 +188,7 @@ class ParquetModelData:
 
     def flush_writers(self, force=False):
         for phase, queue in self.__writers_queue.items():
-            if force or len(queue) >= 65_536:
+            if force or len(queue) >= 32_768:
                 data = {field: [] for field in self.pa_schema.names}
                 for record in queue:
                     for field, value in record.items():
@@ -215,6 +216,7 @@ class ParquetModelData:
                     "group": self.vocabularies["group"][str(group)],
                     "property": self.vocabularies["property"][str(prop)],
                     "ngrams": [self.vocabularies["ngrams"][t] for t in tokens],
+                    "text": str(proxy.get(prop)),
                 }
             )
         self.flush_writers()

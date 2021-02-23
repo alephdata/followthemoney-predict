@@ -19,7 +19,7 @@ def proxy_values(proxy):
 
 def tokenize(group, prop, value, ngram=3):
     if group.name in {"countries", "language", "topic"}:
-        yield value
+        yield f"__{value}"
     else:
         for i in range(max(1, len(value) - ngram + 1)):
             yield value[i : i + ngram]
