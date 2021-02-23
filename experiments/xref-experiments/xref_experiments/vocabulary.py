@@ -30,7 +30,7 @@ def stream_vocabulary_record(item, tokenize_args=None):
     if utils.filter_schema(item):
         proxy = model.get_proxy(item)
         for group, prop, value in proxy_values(proxy):
-            if group == "entity":
+            if group.name == "entity":
                 continue
             value = preprocessor(value)
             yield proxy, group, prop, tokenize(group, prop, value, **tokenize_args)
