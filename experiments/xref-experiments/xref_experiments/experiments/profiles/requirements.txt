@@ -1,0 +1,13 @@
+numpy
+pandas
+pymc3
+sklearn
+
+matplotlib
+seaborn
+arviz
+
+git+https://github.com/alephdata/followthemoney.git@feat/compare-v2
+pyicu
+
+tqdm
