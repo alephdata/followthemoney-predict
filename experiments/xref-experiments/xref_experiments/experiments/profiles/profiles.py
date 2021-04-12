@@ -6,7 +6,7 @@ from enum import Enum
 import json
 
 from tqdm.autonotebook import tqdm
-from followthemoney import model, compare
+from followthemoney import model, compare2
 from followthemoney.proxy import EntityProxy
 from followthemoney.exc import InvalidData
 
@@ -33,11 +33,10 @@ class Judgement(Enum):
     NO_JUDGEMENT = "no_judgement"
 
     def __add__(self, other):
-        if self == other:
-            return self
-        elif Judgement.UNSURE in (self, other):
-            return Judgement.UNSURE
-        elif Judgement.NEGATIVE in (self, other):
+        pair = {self, other}
+        if pair == {Judgement.POSITIVE}:
+            return Judgement.POSITIVE
+        elif pair == {Judgement.POSITIVE, Judgement.NEGATIVE}:
             return Judgement.NEGATIVE
         return Judgement.UNSURE
 
@@ -97,21 +96,20 @@ class ProfileCollection(dict):
         ]
         _describe_list("entity num properties", proxy_n_properties)
 
-    def to_pairs_dict(self, targets=TARGETS):
+    def to_pairs_dict(self, targets=TARGETS, judgements=None):
         pairs_scores = []
         user_weights = create_user_weights_lookup(self)
         N = len(targets)
         for profile in tqdm(self.values()):
-            pairs = profile.iter_pairs()
+            pairs = profile.iter_pairs(judgements)
             for (e1, e2), judgement in pairs:
                 weights = calculate_pair_weights(e1, e2, profile, user_weights)
-                scores = {
-                    str(k): max_or_none(s)
-                    for k, s in compare.compare_scores(model, e1, e2).items()
-                }
+                scores = compare2.compare_scores(model, e1, e2)
+                scores_str = {str(k): s for k, s in scores.items()}
                 data = {}
-                data.update(scores)
-                data.update({f"has_{f}": True for f in scores.keys()})
+                data.update(scores_str)
+                data.update({f"has_{f}": True for f in scores_str.keys()})
+                data["ftm_score"] = compare2._compare(scores)
                 data["pct_full"] = sum(s is not None for s in scores.values()) / N
                 data["pct_partial"] = sum(s is None for s in scores.values()) / N
                 data["pct_empty"] = len(scores) / N
@@ -131,18 +129,18 @@ class Profile:
         self.decisions = {}
 
     def add_decision(self, decision):
+        assert decision["entityset_id"] == self.pid
         judgement = decision["judgement"] = Judgement(decision["judgement"])
         self.decisions[decision["id"]] = decision
-        if decision["entity_id"]:
-            try:
-                data = decision.pop("entity")
-                self.proxies[model.get_proxy(data)] = judgement
-            except (TypeError, InvalidData, KeyError):
-                pass
+        try:
+            data = model.get_proxy(decision.pop("entity"))
+            self.proxies[model.get_proxy(data)] = judgement
+        except (TypeError, InvalidData, KeyError):
+            pass
         if decision["compared_to_entity_id"]:
             try:
                 data = decision.pop("compared_to_entity")
-                self.proxies.setdefault(model.get_proxy(data), None)
+                self.proxies.setdefault(model.get_proxy(data), Judgement.POSITIVE)
             except (TypeError, InvalidData, KeyError):
                 pass
 
@@ -156,7 +154,7 @@ class Profile:
 
     def iter_proxies(self, judgements=None):
         if judgements is not None:
-            yield from [(p, j) for p, j in self.proxies.items() if j in judgements]
+            yield from ((p, j) for p, j in self.proxies.items() if j in judgements)
         else:
             yield from self.proxies.items()
 
@@ -189,9 +187,11 @@ class Profile:
         return f"<Profile({len(self)}) {self.pid}>"
 
     def iter_pairs(self, judgements=None):
-        for (e1, j1), (e2, j2) in combinations(self.iter_proxies(judgements), 2):
+        for (e1, j1), (e2, j2) in combinations(self.iter_proxies(), 2):
             if j1 is None or j2 is None:
                 judgement = Judgement.UNSURE
             else:
                 judgement = j1 + j2
+            if judgements and judgement not in judgements:
+                continue
             yield (e1, e2), judgement

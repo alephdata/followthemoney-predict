@@ -7,7 +7,8 @@ matplotlib
 seaborn
 arviz
 
-git+https://github.com/alephdata/followthemoney.git@feat/compare-v2
+#git+https://github.com/alephdata/followthemoney.git@feat/compare-v2
+/home/micha/work/occrp/followthemoney/
 pyicu
 
 tqdm
